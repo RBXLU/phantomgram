@@ -68,8 +68,7 @@ class ProxyScreen extends StatelessWidget {
                   title: Text(
                     last == null
                         ? 'Подбор ещё не запускался'
-                        : 'Последний подбор: ${formatShortDate(last.millisecondsSinceEpoch ~/ 1000)} '
-                              '${formatTime(last.millisecondsSinceEpoch ~/ 1000)}'
+                        : 'Последний подбор: ${formatDateTime(last.millisecondsSinceEpoch ~/ 1000)}'
                               '${manager.lastCandidateCount > 0 ? ' · проверено ${manager.lastCandidateCount}' : ''}',
                   ),
                   subtitle: manager.lastError == null

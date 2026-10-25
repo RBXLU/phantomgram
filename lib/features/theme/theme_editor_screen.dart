@@ -28,9 +28,10 @@ class ThemeEditorScreen extends StatelessWidget {
           return ListView(
             children: [
               const _Preview(),
-              ListTile(
-                title: const Text('Тема'),
-                trailing: SegmentedButton<ThemeModeSetting>(
+              const ListTile(title: Text('Тема')),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: SegmentedButton<ThemeModeSetting>(
                   segments: const [
                     ButtonSegment(value: ThemeModeSetting.system, label: Text('Авто')),
                     ButtonSegment(value: ThemeModeSetting.light, label: Text('Светлая')),

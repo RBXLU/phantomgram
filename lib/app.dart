@@ -7,10 +7,14 @@ import 'features/auth/auth_screen.dart';
 import 'features/chats/home_screen.dart';
 import 'features/theme/app_theme.dart';
 
+typedef ServicesStarter = Future<Services> Function(AppSettings settings);
+
 class PhantomApp extends StatelessWidget {
-  const PhantomApp({super.key, required this.settings});
+  const PhantomApp({super.key, required this.settings, this.startServices = Services.start, this.navigatorKey});
 
   final AppSettings settings;
+  final ServicesStarter startServices;
+  final GlobalKey<NavigatorState>? navigatorKey;
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +24,7 @@ class PhantomApp extends StatelessWidget {
         final t = settings.theme;
         return MaterialApp(
           title: 'Phantomgram',
+          navigatorKey: navigatorKey,
           debugShowCheckedModeBanner: false,
           theme: buildTheme(t, Brightness.light),
           darkTheme: buildTheme(t, Brightness.dark),
@@ -27,7 +32,7 @@ class PhantomApp extends StatelessWidget {
           // The builder wraps the Navigator, so pushed routes see AppScope too.
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(t.fontScale)),
-            child: ServicesHost(settings: settings, child: child!),
+            child: ServicesHost(settings: settings, start: startServices, child: child!),
           ),
           home: RootScreen(settings: settings),
         );
@@ -38,9 +43,10 @@ class PhantomApp extends StatelessWidget {
 
 /// Owns the TDLib client; recreates it after log-out (TDLib closes itself).
 class ServicesHost extends StatefulWidget {
-  const ServicesHost({super.key, required this.settings, required this.child});
+  const ServicesHost({super.key, required this.settings, required this.start, required this.child});
 
   final AppSettings settings;
+  final ServicesStarter start;
   final Widget child;
 
   @override
@@ -55,7 +61,7 @@ class _ServicesHostState extends State<ServicesHost> {
   Future<void> _start() async {
     _starting = true;
     try {
-      final services = await Services.start(widget.settings);
+      final services = await widget.start(widget.settings);
       services.auth.addListener(() => _onAuth(services));
       if (!mounted) return;
       setState(() => _services = services);

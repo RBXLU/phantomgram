@@ -124,6 +124,13 @@ String formatTime(int unixSeconds, {bool seconds = false}) {
   return seconds ? '$hm:${two(d.second)}' : hm;
 }
 
+/// "22:17" for today, "24.10 22:17" otherwise.
+String formatDateTime(int unixSeconds, {DateTime? now}) {
+  final date = formatShortDate(unixSeconds, now: now);
+  final time = formatTime(unixSeconds);
+  return date == time ? time : '$date $time';
+}
+
 /// Time for today, day.month otherwise (chat list style).
 String formatShortDate(int unixSeconds, {DateTime? now}) {
   final d = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000);

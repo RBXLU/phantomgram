@@ -471,9 +471,7 @@ class _MessageBubbleState extends State<MessageBubble> {
                     ListTile(
                       title: SelectableText(v.text),
                       subtitle: Text(
-                        i == 0
-                            ? 'Оригинал · ${formatTime(v.date)}'
-                            : 'Правка $i · ${formatShortDate(v.date)} ${formatTime(v.date)}',
+                        i == 0 ? 'Оригинал · ${formatTime(v.date)}' : 'Правка $i · ${formatDateTime(v.date)}',
                       ),
                     ),
                 ],

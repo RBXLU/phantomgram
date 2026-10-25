@@ -59,8 +59,13 @@ void main() {
     final older = DateTime(2026, 3, 8).millisecondsSinceEpoch ~/ 1000;
     expect(formatShortDate(today, now: now), '09:05');
     expect(formatShortDate(older, now: now), '08.03');
+    expect(formatDateTime(today, now: now), '09:05');
+    expect(formatDateTime(older, now: now), '08.03 00:00');
     expect(initials('иван петров'), 'ИП');
-    expect(initials('😀 Party'), '😀P');
+    expect(initials('😀 Party'), 'P');
+    expect(initials('Работа 💼'), 'Р');
+    expect(initials('Phantomgram — разработка'), 'PР');
+    expect(initials('🚀'), '🚀');
     expect(initials('  '), '?');
   });
 

@@ -22,7 +22,7 @@ class ChatAvatar extends StatelessWidget {
     } else if (chat.minithumbnail != null) {
       image = MemoryImage(base64Decode(chat.minithumbnail!));
     }
-    final color = Colors.primaries[chat.id.abs() % Colors.primaries.length];
+    final color = avatarColors[chat.id.abs() % avatarColors.length];
     return CircleAvatar(
       radius: radius,
       backgroundColor: color,
@@ -35,10 +35,31 @@ class ChatAvatar extends StatelessWidget {
   }
 }
 
+/// Telegram's avatar palette: saturated enough for white initials.
+const avatarColors = [
+  Color(0xFFE17076),
+  Color(0xFFFAA774),
+  Color(0xFFA695E7),
+  Color(0xFF7BC862),
+  Color(0xFF6EC9CB),
+  Color(0xFF65AADD),
+  Color(0xFFEE7AAE),
+];
+
+final _letter = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// First letters of the first two words that start with a letter or digit,
+/// so "Работа 💼" gives "Р" and "Phantomgram — разработка" gives "PР".
 String initials(String title) {
-  final words = title.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
-  if (words.isEmpty) return '?';
-  final first = String.fromCharCodes(words.first.runes.take(1));
-  final second = words.length > 1 ? String.fromCharCodes(words[1].runes.take(1)) : '';
-  return (first + second).toUpperCase();
+  final letters = <String>[];
+  for (final word in title.trim().split(RegExp(r'\s+'))) {
+    final first = word.runes.isEmpty ? '' : String.fromCharCode(word.runes.first);
+    if (_letter.hasMatch(first)) letters.add(first);
+    if (letters.length == 2) break;
+  }
+  if (letters.isEmpty) {
+    final runes = title.trim().runes;
+    return runes.isEmpty ? '?' : String.fromCharCode(runes.first);
+  }
+  return letters.join().toUpperCase();
 }

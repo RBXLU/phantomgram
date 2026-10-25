@@ -22,10 +22,11 @@ class TdError implements Exception {
 /// update and goes to [updates]. `td_receive` blocks, so it runs in its own
 /// isolate and forwards raw JSON strings back here.
 class TdClient {
-  TdClient._(this._td, this._clientId);
+  TdClient._(this._transmit, [this._fake = false]);
 
-  final TdJson _td;
-  final int _clientId;
+  /// Hands one JSON request to TDLib (or to the fake backend).
+  final void Function(String json) _transmit;
+  final bool _fake;
   final _pending = <String, Completer<TdObject>>{};
   final _updates = StreamController<TdObject>.broadcast(sync: true);
   Isolate? _receiver;
@@ -44,12 +45,37 @@ class TdClient {
   static Future<TdClient> start({int logVerbosity = 1}) async {
     final td = TdJson.open();
     td.execute(jsonEncode({'@type': 'setLogVerbosityLevel', 'new_verbosity_level': logVerbosity}));
-    final client = TdClient._(td, td.createClientId());
+    final clientId = td.createClientId();
+    final client = TdClient._((json) => td.send(clientId, json));
     await client._startReceiver();
     // Any request makes TDLib actually create the client and start emitting
     // updateAuthorizationState.
     unawaited(client.send({'@type': 'getOption', 'name': 'version'}).then((_) {}, onError: (_) {}));
     return client;
+  }
+
+  /// In-process stand-in for TDLib, used by the demo mode: [handler] answers
+  /// every request, [emit] pushes updates. Responses take the same JSON path
+  /// as real ones.
+  factory TdClient.fake(FutureOr<TdObject> Function(TdObject request) handler) {
+    late final TdClient client;
+    client = TdClient._((json) {
+      final request = jsonDecode(json) as TdObject;
+      final extra = request.remove('@extra');
+      Future(() => handler(request))
+          .then(
+            (response) => response,
+            onError: (Object e) => <String, dynamic>{'@type': 'error', 'code': 500, 'message': '$e'},
+          )
+          .then((response) => client._dispatch(jsonEncode({...response, '@extra': extra})));
+    }, true);
+    return client;
+  }
+
+  /// Delivers an update as if TDLib sent it. Only for [TdClient.fake].
+  void emit(TdObject update) {
+    assert(_fake, 'emit() is only for fake clients');
+    _dispatch(jsonEncode(update));
   }
 
   Future<void> _startReceiver() async {
@@ -93,7 +119,7 @@ class TdClient {
     final extra = 'r${_nextExtra++}';
     final completer = Completer<TdObject>();
     _pending[extra] = completer;
-    _td.send(_clientId, jsonEncode({...request, '@extra': extra}));
+    _transmit(jsonEncode({...request, '@extra': extra}));
     if (timeout == null) return completer.future;
     return completer.future.timeout(
       timeout,
@@ -111,6 +137,11 @@ class TdClient {
 
   Future<void> close() async {
     if (_closed) return;
+    if (_fake) {
+      _closed = true;
+      await _updates.close();
+      return;
+    }
     final done = on('updateAuthorizationState')
         .where((u) => (u['authorization_state'] as Map)['@type'] == 'authorizationStateClosed')
         .first

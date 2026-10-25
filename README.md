@@ -19,10 +19,18 @@
 | 🎨 | **Оформление** | Акцентный цвет, цвет своих сообщений, скругление пузырей, размер текста, компактный режим, AMOLED, время с секундами |
 | 🔑 | Вход | Номер + код, облачный пароль, e-mail-код, регистрация, вход по QR |
 
-<p>
-  <img src="docs/screenshots/login.png" width="48%" alt="Вход">
-  <img src="docs/screenshots/proxy.png" width="48%" alt="Автоподбор MTProxy">
-</p>
+### iPhone
+
+![Список чатов, чат с удалённым и изменённым сообщением, тёмная тема](docs/screenshots/ios.png)
+![Прокси, настройки, оформление](docs/screenshots/ios_settings.png)
+
+### Linux
+
+![Список чатов на Linux](docs/screenshots/desktop.png)
+![Чат на Linux](docs/screenshots/desktop_chat.png)
+
+Скриншоты сняты в демо-режиме (см. ниже) из этого же кода. Вид iPhone — размер 390×844 и поведение iOS
+(заголовки, прокрутка, переходы); на настоящем устройстве шрифт будет San Francisco, а строка состояния — системной.
 
 Раздел **TikTok** в настройках зарезервирован под следующую версию.
 
@@ -82,6 +90,18 @@ lib/
 packages/tdjson_native/   dart:ffi к libtdjson + упаковка .so / .xcframework
 scripts/                  сборка TDLib (версия зафиксирована в scripts/TDLIB_COMMIT)
 ```
+
+### Демо-режим
+
+Настоящий интерфейс на примерных данных, без аккаунта и без TDLib:
+
+```bash
+flutter run -t lib/demo/main_demo.dart                     # на любом устройстве
+DEMO_PLATFORM=ios DEMO_SCREEN=chat flutter run -d linux -t lib/demo/main_demo.dart
+```
+
+`DEMO_SCREEN`: `list`, `chat`, `settings`, `proxy`, `theme`, `ghost`, `archive`; `DEMO_DARK=1` — тёмная тема.
+На iOS те же параметры передаются через `--dart-define`.
 
 Тесты: `flutter test`. Смоук-тест с настоящей TDLib:
 `TDJSON_PATH=packages/tdjson_native/prebuilt/linux/libtdjson.so flutter test test/tdlib_smoke_test.dart`.

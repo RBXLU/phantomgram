@@ -35,9 +35,10 @@ class Services {
   final AntiSpamService antispam;
   final ProxyManager proxy;
 
-  static Future<Services> start(AppSettings settings) async {
-    final dataDir = await getApplicationSupportDirectory();
-    final td = await TdClient.start();
+  /// [td] and [dataDir] are overridden by the demo mode.
+  static Future<Services> start(AppSettings settings, {TdClient? td, Directory? dataDir}) async {
+    dataDir ??= await getApplicationSupportDirectory();
+    td ??= await TdClient.start();
     // Subscribers are attached synchronously right after start, before the
     // receive isolate gets a chance to deliver the first update.
     final chats = ChatStore(td, settings);

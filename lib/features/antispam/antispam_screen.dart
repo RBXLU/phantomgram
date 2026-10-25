@@ -90,8 +90,7 @@ class AntiSpamScreen extends StatelessWidget {
                   title: Text(e.title),
                   subtitle: Text(
                     '${e.reasons.join(', ')}\n'
-                    '${formatShortDate(e.date.millisecondsSinceEpoch ~/ 1000)} '
-                    '${formatTime(e.date.millisecondsSinceEpoch ~/ 1000)}',
+                    '${formatDateTime(e.date.millisecondsSinceEpoch ~/ 1000)}',
                   ),
                   isThreeLine: true,
                   trailing: IconButton(

@@ -97,7 +97,7 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
                           title: Text(m.text, maxLines: 2, overflow: TextOverflow.ellipsis),
                           subtitle: Text(
                             '${chat?.title ?? m.chatId} · удалено '
-                            '${formatShortDate(m.deletedAt!)} ${formatTime(m.deletedAt!)}',
+                            '${formatDateTime(m.deletedAt!)}',
                           ),
                           onTap: chat == null
                               ? null
