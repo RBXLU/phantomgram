@@ -1,0 +1,43 @@
+name: Build Linux
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config gperf \
+            libgtk-3-dev liblzma-dev libssl-dev zlib1g-dev
+      - name: Cache TDLib
+        id: tdlib-cache
+        uses: actions/cache@v4
+        with:
+          path: packages/tdjson_native/prebuilt/linux
+          key: tdlib-linux-${{ runner.os }}-${{ hashFiles('scripts/TDLIB_COMMIT', 'scripts/build_tdlib_linux.sh') }}
+      - name: Build TDLib
+        if: steps.tdlib-cache.outputs.cache-hit != 'true'
+        run: JOBS=3 scripts/build_tdlib_linux.sh
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+      - run: flutter pub get
+      - run: flutter build linux --release
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp -r build/linux/x64/release/bundle dist/phantomgram
+          tar -C dist -czf phantomgram-linux-x64.tar.gz phantomgram
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phantomgram-linux-x64
+          path: phantomgram-linux-x64.tar.gz

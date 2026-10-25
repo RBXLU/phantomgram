@@ -1,0 +1,41 @@
+name: Build iOS (unsigned)
+
+# macOS minutes are expensive (x10 for private repos), so this runs on
+# demand and on release tags only. TDLib is cached after the first build.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache TDLib
+        id: tdlib-cache
+        uses: actions/cache@v4
+        with:
+          path: packages/tdjson_native/ios/Frameworks
+          key: tdlib-ios-${{ hashFiles('scripts/TDLIB_COMMIT', 'scripts/build_tdlib_ios.sh') }}
+      - name: Build TDLib
+        if: steps.tdlib-cache.outputs.cache-hit != 'true'
+        run: |
+          brew install gperf coreutils
+          scripts/build_tdlib_ios.sh
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.8
+          cache: true
+      - run: flutter pub get
+      - run: flutter build ios --release --no-codesign
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p Payload
+          cp -r build/ios/iphoneos/Runner.app Payload/
+          zip -qr Phantomgram-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phantomgram-ios-unsigned
+          path: Phantomgram-unsigned.ipa

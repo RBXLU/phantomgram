@@ -1,0 +1,7 @@
+.dart_tool/
+.flutter-plugins-dependencies
+/pubspec.lock
+/build/
+# Native TDLib builds are produced by scripts/ and CI, not committed.
+/prebuilt/
+/ios/Frameworks/
