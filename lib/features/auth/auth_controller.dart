@@ -13,11 +13,15 @@ const appVersion = '0.1.0';
 /// input (TDLib parameters).
 class AuthController extends ChangeNotifier {
   AuthController(this.td, this.settings, this.dataDir) {
-    _sub = td.on('updateAuthorizationState').listen((u) {
-      state = u['authorization_state'] as TdObject;
-      if (stateType == 'authorizationStateWaitTdlibParameters') _sendParameters();
-      notifyListeners();
-    });
+    _sub = td.on('updateAuthorizationState').listen((u) => _onState(u['authorization_state'] as TdObject));
+    final current = td.authorizationState;
+    if (current != null) _onState(current);
+  }
+
+  void _onState(TdObject newState) {
+    state = newState;
+    if (stateType == 'authorizationStateWaitTdlibParameters') _sendParameters();
+    notifyListeners();
   }
 
   final TdClient td;

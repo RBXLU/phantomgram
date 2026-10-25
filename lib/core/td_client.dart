@@ -33,6 +33,9 @@ class TdClient {
   int _nextExtra = 0;
   bool _closed = false;
 
+  /// Latest authorization state, for listeners that subscribe late.
+  TdObject? authorizationState;
+
   Stream<TdObject> get updates => _updates.stream;
 
   /// Filters [updates] by `@type`.
@@ -78,6 +81,9 @@ class TdClient {
         return;
       }
     }
+    if (obj['@type'] == 'updateAuthorizationState') {
+      authorizationState = obj['authorization_state'] as TdObject;
+    }
     _updates.add(obj);
   }
 
@@ -111,6 +117,9 @@ class TdClient {
         .timeout(const Duration(seconds: 10), onTimeout: () => const {});
     post({'@type': 'close'});
     await done;
+    // `done` completes synchronously inside the update dispatch; leave it
+    // before closing the controller that is still firing.
+    await Future<void>.delayed(Duration.zero);
     _closed = true;
     _receiver?.kill(priority: Isolate.immediate);
     _port?.close();

@@ -66,13 +66,23 @@ class Services {
   }
 }
 
+/// Sits above the Navigator so every route can reach the services.
 class AppScope extends InheritedWidget {
-  const AppScope({super.key, required this.services, required super.child});
+  const AppScope({super.key, required this.services, this.error, required super.child});
 
-  final Services services;
+  /// null while TDLib is starting or being restarted after log-out.
+  final Services? services;
+  final Object? error;
 
-  static Services of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()!.services;
+  static AppScope _scope(BuildContext context) => context.dependOnInheritedWidgetOfExactType<AppScope>()!;
+
+  /// Only for widgets that are shown once the services are running.
+  static Services of(BuildContext context) => _scope(context).services!;
+
+  static Services? maybeOf(BuildContext context) => _scope(context).services;
+
+  static Object? errorOf(BuildContext context) => _scope(context).error;
 
   @override
-  bool updateShouldNotify(AppScope oldWidget) => services != oldWidget.services;
+  bool updateShouldNotify(AppScope oldWidget) => services != oldWidget.services || error != oldWidget.error;
 }

@@ -24,11 +24,12 @@ class PhantomApp extends StatelessWidget {
           theme: buildTheme(t, Brightness.light),
           darkTheme: buildTheme(t, Brightness.dark),
           themeMode: themeModeOf(t),
+          // The builder wraps the Navigator, so pushed routes see AppScope too.
           builder: (context, child) => MediaQuery(
             data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(t.fontScale)),
-            child: child!,
+            child: ServicesHost(settings: settings, child: child!),
           ),
-          home: settings.hasApiCredentials ? Bootstrap(settings: settings) : ApiCredentialsScreen(settings: settings),
+          home: RootScreen(settings: settings),
         );
       },
     );
@@ -36,26 +37,23 @@ class PhantomApp extends StatelessWidget {
 }
 
 /// Owns the TDLib client; recreates it after log-out (TDLib closes itself).
-class Bootstrap extends StatefulWidget {
-  const Bootstrap({super.key, required this.settings});
+class ServicesHost extends StatefulWidget {
+  const ServicesHost({super.key, required this.settings, required this.child});
 
   final AppSettings settings;
+  final Widget child;
 
   @override
-  State<Bootstrap> createState() => _BootstrapState();
+  State<ServicesHost> createState() => _ServicesHostState();
 }
 
-class _BootstrapState extends State<Bootstrap> {
+class _ServicesHostState extends State<ServicesHost> {
   Services? _services;
   Object? _error;
-
-  @override
-  void initState() {
-    super.initState();
-    _start();
-  }
+  bool _starting = false;
 
   Future<void> _start() async {
+    _starting = true;
     try {
       final services = await Services.start(widget.settings);
       services.auth.addListener(() => _onAuth(services));
@@ -63,6 +61,8 @@ class _BootstrapState extends State<Bootstrap> {
       setState(() => _services = services);
     } catch (e) {
       if (mounted) setState(() => _error = e);
+    } finally {
+      _starting = false;
     }
   }
 
@@ -81,25 +81,38 @@ class _BootstrapState extends State<Bootstrap> {
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) return StartupErrorScreen(error: _error!);
-    final services = _services;
+    if (widget.settings.hasApiCredentials && _services == null && _error == null && !_starting) {
+      _start();
+    }
+    return AppScope(services: _services, error: _error, child: widget.child);
+  }
+}
+
+class RootScreen extends StatelessWidget {
+  const RootScreen({super.key, required this.settings});
+
+  final AppSettings settings;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!settings.hasApiCredentials) return ApiCredentialsScreen(settings: settings);
+    final error = AppScope.errorOf(context);
+    if (error != null) return StartupErrorScreen(error: error);
+    final services = AppScope.maybeOf(context);
     if (services == null) return const SplashScreen();
-    return AppScope(
-      services: services,
-      child: ListenableBuilder(
-        listenable: services.auth,
-        builder: (context, _) {
-          final auth = services.auth;
-          if (auth.isReady) return const HomeScreen();
-          return switch (auth.stateType) {
-            'authorizationStateWaitTdlibParameters' ||
-            'authorizationStateLoggingOut' ||
-            'authorizationStateClosing' ||
-            'authorizationStateClosed' => SplashScreen(message: auth.error),
-            _ => const AuthScreen(),
-          };
-        },
-      ),
+    return ListenableBuilder(
+      listenable: services.auth,
+      builder: (context, _) {
+        final auth = services.auth;
+        if (auth.isReady) return const HomeScreen();
+        return switch (auth.stateType) {
+          'authorizationStateWaitTdlibParameters' ||
+          'authorizationStateLoggingOut' ||
+          'authorizationStateClosing' ||
+          'authorizationStateClosed' => SplashScreen(message: auth.error),
+          _ => const AuthScreen(),
+        };
+      },
     );
   }
 }
