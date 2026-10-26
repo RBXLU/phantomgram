@@ -1,7 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../core/services.dart';
 import '../../core/td_text.dart';
+import '../../ui/feedback.dart';
+import '../../ui/glass.dart';
+import '../../ui/ios_list.dart';
+import '../../ui/ios_page.dart';
+import '../../ui/look.dart';
 import '../chat/chat_screen.dart';
 import 'message_archive.dart';
 
@@ -26,94 +31,90 @@ class _ArchiveScreenState extends State<ArchiveScreen> {
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Удалённые и изменённые'),
-        actions: [
-          IconButton(
-            tooltip: 'Очистить сохранённое',
-            icon: const Icon(Icons.delete_sweep_outlined),
-            onPressed: () async {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (context) => AlertDialog(
-                  title: const Text('Удалить локальный архив?'),
-                  content: const Text('Сохранённые копии удалённых сообщений и история правок пропадут.'),
-                  actions: [
-                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
-                    FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Удалить')),
-                  ],
-                ),
-              );
-              if (ok == true) {
-                await s.archive.clear();
-                _refresh();
-              }
-            },
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: s.settings,
-        builder: (context, _) => Column(
-          children: [
-            SwitchListTile(
-              title: const Text('Сохранять удалённые сообщения'),
-              subtitle: const Text('Остаются в чате с красной рамкой и пометкой «удалено»'),
-              value: s.settings.archive.saveDeleted,
-              onChanged: (v) => s.settings.update((st) => st.archive.saveDeleted = v),
+    return ListenableBuilder(
+      listenable: s.settings,
+      builder: (context, _) {
+        final look = Look.of(context);
+        return IosPage(
+          title: 'Удалённые и изменённые',
+          actions: [
+            GlassButton(
+              icon: CupertinoIcons.trash,
+              semanticLabel: 'Очистить',
+              onPressed: () async {
+                final ok = await confirm(
+                  context,
+                  title: 'Очистить локальный архив?',
+                  message: 'Сохранённые копии удалённых сообщений и история правок пропадут.',
+                  action: 'Очистить',
+                  destructive: true,
+                );
+                if (ok) {
+                  await s.archive.clear();
+                  _refresh();
+                }
+              },
             ),
-            SwitchListTile(
-              title: const Text('Сохранять историю правок'),
-              subtitle: const Text('Долгое нажатие на «изм.» сообщение → «История правок»'),
-              value: s.settings.archive.saveEdits,
-              onChanged: (v) => s.settings.update((st) => st.archive.saveEdits = v),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              child: Text(
-                'Сохраняется только то, что дошло до этого устройства: если сообщение удалили, '
-                'пока клиент был закрыт и не успел его получить, восстановить его нельзя.',
-                style: TextStyle(fontSize: 12),
+          ],
+          slivers: [
+            SliverToBoxAdapter(
+              child: IosSection(
+                dividerInset: 16,
+                footer:
+                    'Сохраняется только то, что дошло до этого устройства: если сообщение удалили, пока '
+                    'клиент был закрыт и не успел его получить, восстановить его нельзя.',
+                children: [
+                  IosSwitchRow(
+                    title: 'Сохранять удалённые',
+                    subtitle: 'Остаются в чате с красной рамкой',
+                    value: s.settings.archive.saveDeleted,
+                    onChanged: (v) => s.settings.update((st) => st.archive.saveDeleted = v),
+                  ),
+                  IosSwitchRow(
+                    title: 'Сохранять историю правок',
+                    subtitle: 'Долгое нажатие на сообщение → «История правок»',
+                    value: s.settings.archive.saveEdits,
+                    onChanged: (v) => s.settings.update((st) => st.archive.saveEdits = v),
+                  ),
+                ],
               ),
             ),
-            const Divider(),
-            Expanded(
+            SliverToBoxAdapter(
               child: FutureBuilder<List<ArchivedMessage>>(
                 future: _deleted,
                 builder: (context, snap) {
-                  if (!snap.hasData) return const Center(child: CircularProgressIndicator());
+                  if (!snap.hasData) {
+                    return const Padding(padding: EdgeInsets.all(24), child: CupertinoActivityIndicator());
+                  }
                   final list = snap.data!;
-                  if (list.isEmpty) return const Center(child: Text('Удалённых сообщений пока нет'));
-                  return RefreshIndicator(
-                    onRefresh: () async => _refresh(),
-                    child: ListView.builder(
-                      itemCount: list.length,
-                      itemBuilder: (context, i) {
-                        final m = list[i];
-                        final chat = s.chats.chats[m.chatId];
-                        return ListTile(
-                          leading: const Icon(Icons.delete_outline),
-                          title: Text(m.text, maxLines: 2, overflow: TextOverflow.ellipsis),
-                          subtitle: Text(
-                            '${chat?.title ?? m.chatId} · удалено '
-                            '${formatDateTime(m.deletedAt!)}',
-                          ),
-                          onTap: chat == null
+                  return IosSection(
+                    header: 'Удалённые сообщения',
+                    dividerInset: 16,
+                    children: [
+                      if (list.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text('Пока ничего не удаляли', style: TextStyle(color: look.secondaryLabel)),
+                        ),
+                      for (final m in list)
+                        IosRow(
+                          title: m.text,
+                          subtitle:
+                              '${s.chats.chats[m.chatId]?.title ?? m.chatId} · удалено ${formatDateTime(m.deletedAt!)}',
+                          onTap: s.chats.chats[m.chatId] == null
                               ? null
                               : () =>
                                     Navigator.of(context)
-                                        .push(MaterialPageRoute<void>(builder: (_) => ChatScreen(chatId: m.chatId))),
-                        );
-                      },
-                    ),
+                                        .push(CupertinoPageRoute<void>(builder: (_) => ChatScreen(chatId: m.chatId))),
+                        ),
+                    ],
                   );
                 },
               ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }

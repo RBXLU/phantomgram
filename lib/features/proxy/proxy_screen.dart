@@ -1,205 +1,247 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../core/services.dart';
 import '../../core/td_text.dart';
+import '../../ui/feedback.dart';
+import '../../ui/ios_list.dart';
+import '../../ui/ios_page.dart';
+import '../../ui/look.dart';
 import 'proxy_link.dart';
 import 'proxy_manager.dart';
 
 class ProxyScreen extends StatelessWidget {
   const ProxyScreen({super.key});
 
+  static Color pingColor(double ms) => ms < 80
+      ? LookData.green
+      : ms < 200
+      ? LookData.orange
+      : LookData.destructive;
+
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     final manager = s.proxy;
     final settings = s.settings;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Прокси (MTProxy)')),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([settings, manager]),
-        builder: (context, _) {
-          final cfg = settings.proxy;
-          final last = cfg.lastRotation;
-          return ListView(
-            children: [
-              SwitchListTile(
-                title: const Text('Автоподбор лучших прокси'),
-                subtitle: Text(
-                  'Топ-${cfg.topCount} по пингу и стабильности, '
-                  'пересчёт каждые ${cfg.intervalMinutes} мин, автопереключение при обрыве',
-                ),
-                value: cfg.autoEnabled,
-                onChanged: manager.busy ? null : manager.setAutoEnabled,
-              ),
-              ListTile(
-                title: const Text('Сколько держать в списке'),
-                trailing: DropdownButton<int>(
-                  value: cfg.topCount,
-                  items: [
-                    for (final n in [3, 5, 7, 10]) DropdownMenuItem(value: n, child: Text('$n')),
-                  ],
-                  onChanged: (v) => settings.update((st) => st.proxy.topCount = v!),
-                ),
-              ),
-              ListTile(
-                title: const Text('Пересчитывать каждые'),
-                trailing: DropdownButton<int>(
-                  value: cfg.intervalMinutes,
-                  items: [
-                    for (final m in [15, 30, 60, 120, 360])
-                      DropdownMenuItem(value: m, child: Text(m < 60 ? '$m мин' : '${m ~/ 60} ч')),
-                  ],
-                  onChanged: (v) => settings.update((st) => st.proxy.intervalMinutes = v!),
-                ),
-              ),
-              if (manager.busy)
-                ListTile(
-                  title: Text(
-                    manager.progressTotal == 0
-                        ? 'Сбор прокси из источников…'
-                        : 'Проверка ${manager.progressDone} из ${manager.progressTotal}',
-                  ),
-                  subtitle: LinearProgressIndicator(
-                    value: manager.progressTotal == 0 ? null : manager.progressDone / manager.progressTotal,
-                  ),
-                )
-              else
-                ListTile(
-                  title: Text(
-                    last == null
-                        ? 'Подбор ещё не запускался'
-                        : 'Последний подбор: ${formatDateTime(last.millisecondsSinceEpoch ~/ 1000)}'
-                              '${manager.lastCandidateCount > 0 ? ' · проверено ${manager.lastCandidateCount}' : ''}',
-                  ),
-                  subtitle: manager.lastError == null
-                      ? null
-                      : Text(manager.lastError!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                  trailing: FilledButton.tonal(
-                    onPressed: cfg.autoEnabled ? manager.rotate : null,
-                    child: const Text('Подобрать сейчас'),
-                  ),
-                ),
-              const _Header('Текущий топ'),
-              if (cfg.selected.isEmpty) const ListTile(title: Text('Пусто')),
-              for (final (i, p) in cfg.selected.indexed)
-                ListTile(
-                  leading: Icon(i == cfg.activeIndex ? Icons.radio_button_checked : Icons.radio_button_off),
-                  title: Text('${p.link.server}:${p.link.port}'),
-                  subtitle: Text(
-                    'пинг ${p.pingMs.round()} мс · разброс ${p.jitterMs.round()} мс · '
-                    'ответил ${(p.successRate * 100).round()}%',
-                  ),
-                  onTap: () => manager.activate(i),
-                ),
-              const _Header('Источники'),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16),
-                child: Text(
-                  'Ссылка на страницу или файл со списком tg://proxy / t.me/proxy ссылок, '
-                  'или @канал, где публикуют прокси (канал читается через ваш аккаунт).',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-              for (final src in cfg.sources)
-                ListTile(
-                  leading: Icon(isChannelSource(src) ? Icons.campaign_outlined : Icons.link),
-                  title: Text(src),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => settings.update((st) => st.proxy.sources.remove(src)),
-                  ),
-                ),
-              ListTile(
-                leading: const Icon(Icons.add),
-                title: const Text('Добавить источник'),
-                onTap: () async {
-                  final v = await _ask(context, 'Источник', 'https://… или @channel');
-                  if (v != null && v.isNotEmpty && !cfg.sources.contains(v)) {
-                    settings.update((st) => st.proxy.sources.add(v));
-                  }
-                },
-              ),
-              const _Header('Свои прокси'),
-              for (final link in cfg.manualLinks)
-                ListTile(
-                  title: Text(parseProxyLink(link)?.toString() ?? link, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  trailing: IconButton(
-                    icon: const Icon(Icons.close),
-                    onPressed: () => settings.update((st) => st.proxy.manualLinks.remove(link)),
-                  ),
-                ),
-              ListTile(
-                leading: const Icon(Icons.add),
-                title: const Text('Вставить ссылки на прокси'),
-                onTap: () async {
-                  final v = await _ask(context, 'Ссылки', 'tg://proxy?server=…&port=…&secret=…', lines: 6);
-                  if (v == null) return;
-                  final links = extractProxyLinks(v);
-                  if (links.isEmpty) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context)
-                          .showSnackBar(const SnackBar(content: Text('Ссылок на MTProxy не найдено')));
-                    }
-                    return;
-                  }
-                  settings.update((st) {
-                    for (final l in links) {
-                      if (!st.proxy.manualLinks.contains(l.toLink())) st.proxy.manualLinks.add(l.toLink());
-                    }
-                  });
-                },
-              ),
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'Скорость оценивается по задержке, разбросу и потерям пингов: отдельно скачать '
-                  'тестовый файл через MTProxy нельзя. Владелец прокси видит ваш IP (но не переписку) '
-                  'и может показывать в списке чатов спонсорский канал.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
+    return ListenableBuilder(
+      listenable: Listenable.merge([settings, manager]),
+      builder: (context, _) {
+        final cfg = settings.proxy;
+        final last = cfg.lastRotation;
+        final look = Look.of(context);
 
-  static Future<String?> _ask(BuildContext context, String title, String hint, {int lines = 1}) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          minLines: lines,
-          maxLines: lines,
-          decoration: InputDecoration(hintText: hint),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-          FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Добавить')),
-        ],
-      ),
+        Future<void> pickNumber(
+          String title,
+          List<int> options,
+          String Function(int) label,
+          void Function(int) set,
+        ) async {
+          final v = await actionSheet<int>(
+            context,
+            title: title,
+            actions: [for (final o in options) SheetAction(label(o), o)],
+          );
+          if (v != null) settings.update((_) => set(v));
+        }
+
+        String interval(int m) => m < 60 ? '$m мин' : '${m ~/ 60} ч';
+
+        return IosPage(
+          title: 'Прокси',
+          slivers: [
+            SliverToBoxAdapter(
+              child: IosSection(
+                dividerInset: 16,
+                footer:
+                    'Собирает прокси из ваших источников, пингует каждый 3 раза, держит лучшие по задержке '
+                    'и стабильности и переключается на следующий при обрыве.',
+                children: [
+                  IosSwitchRow(
+                    title: 'Автоподбор лучших',
+                    value: cfg.autoEnabled,
+                    onChanged: manager.busy ? null : manager.setAutoEnabled,
+                  ),
+                  IosRow(
+                    title: 'Держать в списке',
+                    value: '${cfg.topCount}',
+                    onTap: () => pickNumber(
+                      'Сколько прокси держать',
+                      [3, 5, 7, 10],
+                      (n) => '$n',
+                      (v) => settings.proxy.topCount = v,
+                    ),
+                  ),
+                  IosRow(
+                    title: 'Пересчитывать каждые',
+                    value: interval(cfg.intervalMinutes),
+                    onTap: () => pickNumber(
+                      'Как часто пересчитывать',
+                      [15, 30, 60, 120, 360],
+                      interval,
+                      (v) => settings.proxy.intervalMinutes = v,
+                    ),
+                  ),
+                  if (manager.busy)
+                    IosRow(
+                      title: manager.progressTotal == 0
+                          ? 'Сбор прокси из источников…'
+                          : 'Проверено ${manager.progressDone} из ${manager.progressTotal}',
+                      trailing: const CupertinoActivityIndicator(),
+                    )
+                  else
+                    IosRow(
+                      title: 'Подобрать сейчас',
+                      accent: cfg.autoEnabled,
+                      enabled: cfg.autoEnabled,
+                      subtitle:
+                          manager.lastError ??
+                          (last == null
+                              ? 'Подбор ещё не запускался'
+                              : 'Последний: ${formatDateTime(last.millisecondsSinceEpoch ~/ 1000)}'
+                                    '${manager.lastCandidateCount > 0 ? ' · проверено ${manager.lastCandidateCount}' : ''}'),
+                      onTap: manager.rotate,
+                      chevron: false,
+                    ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Текущий топ',
+                dividerInset: 16,
+                children: [
+                  if (cfg.selected.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text('Пусто', style: TextStyle(color: look.secondaryLabel)),
+                    ),
+                  for (final (i, p) in cfg.selected.indexed)
+                    IosRow(
+                      title: '${p.link.server}:${p.link.port}',
+                      subtitle: 'разброс ${p.jitterMs.round()} мс · ответил ${(p.successRate * 100).round()}%',
+                      onTap: () => manager.activate(i),
+                      chevron: false,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: pingColor(p.pingMs).withValues(alpha: 0.16),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '${p.pingMs.round()} мс',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: pingColor(p.pingMs)),
+                            ),
+                          ),
+                          SizedBox(
+                            width: 30,
+                            child: i == cfg.activeIndex
+                                ? Icon(CupertinoIcons.checkmark_alt, color: look.accent, size: 22)
+                                : null,
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Источники',
+                dividerInset: 16,
+                footer:
+                    'Страница или файл со ссылками tg://proxy / t.me/proxy, или @канал, где публикуют прокси '
+                    '(канал читается через ваш аккаунт).',
+                children: [
+                  for (final src in cfg.sources)
+                    IosRow(
+                      title: src,
+                      subtitle: isChannelSource(src) ? 'Telegram-канал' : 'Ссылка',
+                      trailing: _RemoveButton(onPressed: () => settings.update((st) => st.proxy.sources.remove(src))),
+                    ),
+                  IosRow(
+                    title: 'Добавить источник',
+                    accent: true,
+                    chevron: false,
+                    onTap: () async {
+                      final v = await promptText(
+                        context,
+                        title: 'Источник',
+                        placeholder: 'https://… или @channel',
+                        action: 'Добавить',
+                      );
+                      if (v != null && v.isNotEmpty && !cfg.sources.contains(v)) {
+                        settings.update((st) => st.proxy.sources.add(v));
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Свои прокси',
+                dividerInset: 16,
+                footer:
+                    'Скорость оценивается по задержке, разбросу и потерям: скачать тестовый файл через MTProxy '
+                    'в обход Telegram нельзя. Владелец прокси видит ваш IP (но не переписку) и может '
+                    'показывать спонсорский канал.',
+                children: [
+                  for (final link in cfg.manualLinks)
+                    IosRow(
+                      title: parseProxyLink(link)?.toString() ?? link,
+                      trailing: _RemoveButton(
+                        onPressed: () => settings.update((st) => st.proxy.manualLinks.remove(link)),
+                      ),
+                    ),
+                  IosRow(
+                    title: 'Вставить ссылки',
+                    accent: true,
+                    chevron: false,
+                    onTap: () async {
+                      final v = await promptText(
+                        context,
+                        title: 'Ссылки на прокси',
+                        placeholder: 'tg://proxy?server=…&port=…&secret=…',
+                        lines: 5,
+                        action: 'Добавить',
+                      );
+                      if (v == null || !context.mounted) return;
+                      final links = extractProxyLinks(v);
+                      if (links.isEmpty) {
+                        showToast(context, 'Ссылок на MTProxy не найдено');
+                        return;
+                      }
+                      settings.update((st) {
+                        for (final l in links) {
+                          if (!st.proxy.manualLinks.contains(l.toLink())) st.proxy.manualLinks.add(l.toLink());
+                        }
+                      });
+                      showToast(context, 'Добавлено: ${links.length}');
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
-    controller.dispose();
-    return result;
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header(this.title);
+class _RemoveButton extends StatelessWidget {
+  const _RemoveButton({required this.onPressed});
 
-  final String title;
+  final VoidCallback onPressed;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-    child: Text(
-      title,
-      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
-    ),
+  Widget build(BuildContext context) => CupertinoButton(
+    padding: EdgeInsets.zero,
+    minimumSize: const Size(32, 32),
+    onPressed: onPressed,
+    child: const Icon(CupertinoIcons.minus_circle_fill, color: LookData.destructive),
   );
 }

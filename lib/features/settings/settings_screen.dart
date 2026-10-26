@@ -1,132 +1,168 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../core/services.dart';
+import '../../core/td_text.dart';
+import '../../ui/feedback.dart';
+import '../../ui/glass.dart';
+import '../../ui/ios_list.dart';
+import '../../ui/ios_page.dart';
+import '../../ui/look.dart';
+import '../../widgets/chat_avatar.dart';
 import '../antispam/antispam_screen.dart';
 import '../archive/archive_screen.dart';
 import '../auth/auth_controller.dart';
 import '../proxy/proxy_screen.dart';
 import '../theme/theme_editor_screen.dart';
 import 'ghost_settings_screen.dart';
+import 'local_pins_screen.dart';
 
+/// Settings tab.
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
-    void open(Widget screen) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => screen));
+    void open(Widget screen) => Navigator.of(context).push(CupertinoPageRoute<void>(builder: (_) => screen));
 
-    return Scaffold(
-      appBar: AppBar(title: const Text('Настройки')),
-      body: ListenableBuilder(
-        listenable: Listenable.merge([s.settings, s.proxy]),
-        builder: (context, _) {
-          final st = s.settings;
-          return ListView(
-            children: [
-              const _Section('Telegram'),
-              ListTile(
-                leading: const Icon(Icons.visibility_off_outlined),
-                title: const Text('Призрачный режим'),
-                subtitle: Text(st.ghost.enabled ? 'Включён' : 'Выключен'),
-                onTap: () => open(const GhostSettingsScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.restore_from_trash_outlined),
-                title: const Text('Удалённые и изменённые'),
-                subtitle: Text(
-                  st.archive.saveDeleted || st.archive.saveEdits ? 'Сохраняются на устройстве' : 'Не сохраняются',
-                ),
-                onTap: () => open(const ArchiveScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.shield_outlined),
-                title: const Text('Антиспам'),
-                subtitle: Text(st.spam.enabled ? 'Спам → архив · в журнале ${st.spamLog.length}' : 'Выключен'),
-                onTap: () => open(const AntiSpamScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.vpn_lock_outlined),
-                title: const Text('Прокси (MTProxy)'),
-                subtitle: Text(
-                  st.proxy.autoEnabled
-                      ? 'Автоподбор: топ-${st.proxy.topCount}, смена каждые ${st.proxy.intervalMinutes} мин'
-                      : 'Автоподбор выключен',
-                ),
-                onTap: () => open(const ProxyScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.palette_outlined),
-                title: const Text('Оформление'),
-                subtitle: const Text('Цвета, пузыри, шрифт, компактный режим'),
-                onTap: () => open(const ThemeEditorScreen()),
-              ),
-              ListTile(
-                leading: const Icon(Icons.push_pin_outlined),
-                title: const Text('Локальные закрепы'),
-                subtitle: Text(
-                  '${st.localPins.length} · без лимита, только на этом устройстве. '
-                  'Долгое нажатие на чат → «Закрепить локально»',
-                ),
-              ),
-              const _Section('TikTok'),
-              const ListTile(
-                enabled: false,
-                leading: Icon(Icons.music_note_outlined),
-                title: Text('TikTok'),
-                subtitle: Text('В следующей версии: веб-версия со своей темой и напоминанием про огонёк'),
-              ),
-              const _Section('Аккаунт'),
-              ListTile(
-                leading: const Icon(Icons.key_outlined),
-                title: const Text('api_id / api_hash'),
-                subtitle: Text('api_id ${st.apiId}'),
-              ),
-              ListTile(
-                leading: Icon(Icons.logout, color: Theme.of(context).colorScheme.error),
-                title: Text('Выйти', style: TextStyle(color: Theme.of(context).colorScheme.error)),
-                onTap: () async {
-                  final ok = await showDialog<bool>(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Выйти из аккаунта?'),
-                      actions: [
-                        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Отмена')),
-                        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Выйти')),
-                      ],
+    return ListenableBuilder(
+      listenable: Listenable.merge([s.settings, s.proxy, s.chats]),
+      builder: (context, _) {
+        final st = s.settings;
+        final look = Look.of(context);
+        final me = s.chats.users[s.chats.myUserId];
+        final username = ((me?['usernames'] as Map?)?['active_usernames'] as List?)?.cast<String>().firstOrNull;
+        final phone = me?['phone_number'] as String? ?? '';
+        return IosPage(
+          title: 'Настройки',
+          largeTitle: true,
+          showBack: false,
+          bottomInset: 84,
+          slivers: [
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                child: Column(
+                  children: [
+                    Avatar(
+                      id: s.chats.myUserId ?? 0,
+                      title: userDisplayName(me),
+                      size: 92,
+                      image: photoImage(
+                        s.chats,
+                        ((me?['profile_photo'] as Map?)?['small'] as Map?)?['id'] as int?,
+                        null,
+                      ),
                     ),
-                  );
-                  if (ok == true && context.mounted) {
-                    Navigator.of(context).popUntil((r) => r.isFirst);
-                    await s.auth.logOut();
-                  }
-                },
+                    const SizedBox(height: 10),
+                    Text(
+                      me == null ? 'Аккаунт' : userDisplayName(me),
+                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: look.label),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      [if (phone.isNotEmpty) formatPhone(phone), if (username != null) '@$username'].join(' · '),
+                      style: TextStyle(fontSize: 15, color: look.secondaryLabel),
+                    ),
+                  ],
+                ),
               ),
-              const AboutListTile(
-                icon: Icon(Icons.info_outline),
-                applicationName: 'Phantomgram',
-                applicationVersion: appVersion,
-                aboutBoxChildren: [Text('Неофициальный клиент Telegram на TDLib. Не связан с Telegram FZ-LLC.')],
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Telegram',
+                children: [
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.eye_slash_fill, Color(0xFF5856D6)),
+                    title: 'Призрачный режим',
+                    value: st.ghost.enabled ? 'Вкл.' : 'Выкл.',
+                    onTap: () => open(const GhostSettingsScreen()),
+                  ),
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.trash_fill, LookData.destructive),
+                    title: 'Удалённые сообщения',
+                    value: st.archive.saveDeleted || st.archive.saveEdits ? 'Вкл.' : 'Выкл.',
+                    onTap: () => open(const ArchiveScreen()),
+                  ),
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.shield_fill, LookData.green),
+                    title: 'Антиспам',
+                    value: st.spam.enabled ? '${st.spamLog.length}' : 'Выкл.',
+                    onTap: () => open(const AntiSpamScreen()),
+                  ),
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.globe, Color(0xFF007AFF)),
+                    title: 'Прокси',
+                    value: st.proxy.autoEnabled ? 'Авто · топ-${st.proxy.topCount}' : 'Выкл.',
+                    onTap: () => open(const ProxyScreen()),
+                  ),
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.pin_fill, LookData.orange),
+                    title: 'Закреплённые чаты',
+                    value: '${st.localPins.length}',
+                    onTap: () => open(const LocalPinsScreen()),
+                  ),
+                ],
               ),
-            ],
-          );
-        },
-      ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                children: [
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.paintbrush_fill, Color(0xFFFF2D55)),
+                    title: 'Оформление',
+                    value: wallpapers[st.theme.wallpaper.clamp(0, wallpapers.length - 1)].name,
+                    onTap: () => open(const ThemeEditorScreen()),
+                  ),
+                ],
+              ),
+            ),
+            const SliverToBoxAdapter(
+              child: IosSection(
+                header: 'TikTok',
+                footer: 'В следующей версии: веб-версия со своей темой и напоминанием про огонёк.',
+                children: [
+                  IosRow(
+                    leading: IconTile(CupertinoIcons.music_note_2, Color(0xFF1C1C1E)),
+                    title: 'TikTok',
+                    value: 'Скоро',
+                    enabled: false,
+                  ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Аккаунт',
+                footer:
+                    'Phantomgram $appVersion · неофициальный клиент Telegram на TDLib, не связан с Telegram FZ-LLC.',
+                children: [
+                  IosRow(
+                    leading: const IconTile(CupertinoIcons.lock_shield_fill, Color(0xFF8E8E93)),
+                    title: 'Ключи API',
+                    value: 'api_id ${st.apiId}',
+                  ),
+                  IosRow(
+                    title: 'Выйти',
+                    destructive: true,
+                    centered: true,
+                    onTap: () async {
+                      final ok = await confirm(
+                        context,
+                        title: 'Выйти из аккаунта?',
+                        message: 'Локальные закрепы и архив удалённых сообщений останутся на устройстве.',
+                        action: 'Выйти',
+                        destructive: true,
+                      );
+                      if (ok) await s.auth.logOut();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
-}
-
-class _Section extends StatelessWidget {
-  const _Section(this.title);
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-    child: Text(
-      title,
-      style: TextStyle(color: Theme.of(context).colorScheme.primary, fontWeight: FontWeight.w600),
-    ),
-  );
 }

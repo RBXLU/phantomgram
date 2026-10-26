@@ -7,8 +7,12 @@ environment:
   sdk: ^3.13.7
 
 dependencies:
+  cupertino_icons: ^1.0.9
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_slidable: ^4.0.3
   http: ^1.6.0
   path: ^1.9.1
   path_provider: ^2.1.6

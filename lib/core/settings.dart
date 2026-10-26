@@ -87,15 +87,24 @@ enum ThemeModeSetting { system, light, dark }
 
 class ThemeSettings {
   ThemeModeSetting mode = ThemeModeSetting.system;
-  int seedColor = 0xFF2AABEE;
+
+  /// iOS system blue by default.
+  int seedColor = 0xFF007AFF;
 
   /// null: derived from [seedColor].
   int? outgoingBubbleColor;
-  double bubbleRadius = 16;
+  double bubbleRadius = 18;
   double fontScale = 1.0;
   bool compact = false;
   bool showSeconds = false;
   bool amoled = false;
+
+  /// Liquid Glass look, like the iOS 27 transparency slider:
+  /// 0 — clear (most see-through), 1 — tinted (frosted, most readable).
+  double glassTint = 0.5;
+
+  /// Index into the chat wallpaper presets.
+  int wallpaper = 0;
 
   Map<String, dynamic> toJson() => {
     'mode': mode.name,
@@ -106,6 +115,8 @@ class ThemeSettings {
     'compact': compact,
     'showSeconds': showSeconds,
     'amoled': amoled,
+    'glassTint': glassTint,
+    'wallpaper': wallpaper,
   };
 
   void load(Map json) {
@@ -117,6 +128,8 @@ class ThemeSettings {
     compact = json['compact'] as bool? ?? compact;
     showSeconds = json['showSeconds'] as bool? ?? showSeconds;
     amoled = json['amoled'] as bool? ?? amoled;
+    glassTint = (json['glassTint'] as num?)?.toDouble() ?? glassTint;
+    wallpaper = json['wallpaper'] as int? ?? wallpaper;
   }
 }
 

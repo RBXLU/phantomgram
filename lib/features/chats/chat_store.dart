@@ -97,6 +97,8 @@ class ChatStore extends ChangeNotifier {
       case 'updateUser':
         final user = u['user'] as TdObject;
         users[user['id'] as int] = user;
+      case 'updateUserStatus':
+        users[u['user_id']]?['status'] = u['status'];
       case 'updateFile':
         final file = u['file'] as TdObject;
         _files[file['id'] as int] = file;

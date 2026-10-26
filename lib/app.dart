@@ -1,11 +1,13 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'core/services.dart';
 import 'core/settings.dart';
 import 'features/auth/api_credentials_screen.dart';
 import 'features/auth/auth_screen.dart';
+import 'features/auth/splash_screen.dart';
 import 'features/chats/home_screen.dart';
-import 'features/theme/app_theme.dart';
+import 'ui/look.dart';
 
 typedef ServicesStarter = Future<Services> Function(AppSettings settings);
 
@@ -18,23 +20,38 @@ class PhantomApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final platform = MediaQuery.platformBrightnessOf(context);
     return ListenableBuilder(
       listenable: settings,
       builder: (context, _) {
         final t = settings.theme;
-        return MaterialApp(
-          title: 'Phantomgram',
-          navigatorKey: navigatorKey,
-          debugShowCheckedModeBanner: false,
-          theme: buildTheme(t, Brightness.light),
-          darkTheme: buildTheme(t, Brightness.dark),
-          themeMode: themeModeOf(t),
-          // The builder wraps the Navigator, so pushed routes see AppScope too.
-          builder: (context, child) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(t.fontScale)),
-            child: ServicesHost(settings: settings, start: startServices, child: child!),
+        final brightness = brightnessFor(t, platform);
+        final look = LookData.from(t, brightness);
+        return Look(
+          data: look,
+          child: CupertinoApp(
+            title: 'Phantomgram',
+            navigatorKey: navigatorKey,
+            debugShowCheckedModeBanner: false,
+            locale: const Locale('ru'),
+            supportedLocales: const [Locale('ru'), Locale('en')],
+            localizationsDelegates: GlobalMaterialLocalizations.delegates,
+            theme: CupertinoThemeData(
+              brightness: brightness,
+              primaryColor: look.accent,
+              scaffoldBackgroundColor: look.groupedBg,
+              barBackgroundColor: look.glass,
+            ),
+            // The builder wraps the Navigator, so pushed routes see AppScope too.
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(t.fontScale)),
+              child: DefaultTextStyle(
+                style: TextStyle(color: look.label, fontSize: 17, letterSpacing: -0.4),
+                child: ServicesHost(settings: settings, start: startServices, child: child!),
+              ),
+            ),
+            home: RootScreen(settings: settings),
           ),
-          home: RootScreen(settings: settings),
         );
       },
     );
@@ -119,59 +136,6 @@ class RootScreen extends StatelessWidget {
           _ => const AuthScreen(),
         };
       },
-    );
-  }
-}
-
-class SplashScreen extends StatelessWidget {
-  const SplashScreen({super.key, this.message});
-
-  final String? message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.blur_on, size: 72, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 16),
-            if (message == null) const CircularProgressIndicator() else Text(message!),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class StartupErrorScreen extends StatelessWidget {
-  const StartupErrorScreen({super.key, required this.error});
-
-  final Object error;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 56),
-              const SizedBox(height: 12),
-              const Text('Не удалось запустить TDLib', style: TextStyle(fontSize: 18)),
-              const SizedBox(height: 8),
-              SelectableText(
-                '$error\n\nПроверьте, что libtdjson собрана: scripts/build_tdlib_linux.sh '
-                '(или scripts/build_tdlib_ios.sh для iOS).',
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }

@@ -13,9 +13,22 @@ class DemoBackend {
   static const editedMessageId = 1005;
 
   late final _users = <TdObject>[
-    _user(myId, 'Максим', contact: false),
-    _user(101, 'Аня'),
-    _user(102, 'Мама'),
+    {
+      ..._user(myId, 'Максим', last: 'Ковальчук', contact: false),
+      'phone_number': '79991234567',
+      'usernames': {
+        '@type': 'usernames',
+        'active_usernames': ['maksim'],
+      },
+    },
+    {
+      ..._user(101, 'Аня'),
+      'status': {'@type': 'userStatusOnline', 'expires': _now + 300},
+    },
+    {
+      ..._user(102, 'Мама'),
+      'status': {'@type': 'userStatusOffline', 'was_online': _now - 3600},
+    },
     _user(103, 'Саша', last: 'Петров'),
     _user(104, 'Дима'),
     _user(105, 'Лена'),

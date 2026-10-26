@@ -141,3 +141,66 @@ String formatShortDate(int unixSeconds, {DateTime? now}) {
   String two(int v) => v.toString().padLeft(2, '0');
   return d.year == n.year ? '${two(d.day)}.${two(d.month)}' : '${two(d.day)}.${two(d.month)}.${d.year % 100}';
 }
+
+const _monthsGenitive = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+];
+
+/// Date separator in a chat: "Сегодня", "Вчера", "24 октября", "8 марта 2025".
+String formatDayHeader(int unixSeconds, {DateTime? now}) {
+  final d = DateTime.fromMillisecondsSinceEpoch(unixSeconds * 1000);
+  final n = now ?? DateTime.now();
+  final day = DateTime(d.year, d.month, d.day);
+  final today = DateTime(n.year, n.month, n.day);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return 'Сегодня';
+  if (diff == 1) return 'Вчера';
+  final base = '${d.day} ${_monthsGenitive[d.month - 1]}';
+  return d.year == n.year ? base : '$base ${d.year}';
+}
+
+bool sameDay(int a, int b) {
+  final x = DateTime.fromMillisecondsSinceEpoch(a * 1000);
+  final y = DateTime.fromMillisecondsSinceEpoch(b * 1000);
+  return x.year == y.year && x.month == y.month && x.day == y.day;
+}
+
+/// "в сети", "был(а) в 21:40", "был(а) недавно" for a TDLib UserStatus.
+String userStatusText(Map? status, {DateTime? now}) => switch (status?['@type']) {
+  'userStatusOnline' => 'в сети',
+  'userStatusOffline' => _lastSeen(status!['was_online'] as int? ?? 0, now ?? DateTime.now()),
+  'userStatusRecently' => 'был(а) недавно',
+  'userStatusLastWeek' => 'был(а) на этой неделе',
+  'userStatusLastMonth' => 'был(а) в этом месяце',
+  _ => 'был(а) давно',
+};
+
+String _lastSeen(int unixSeconds, DateTime now) {
+  final header = formatDayHeader(unixSeconds, now: now);
+  final time = formatTime(unixSeconds);
+  return switch (header) {
+    'Сегодня' => 'был(а) в $time',
+    'Вчера' => 'был(а) вчера в $time',
+    _ => 'был(а) $header',
+  };
+}
+
+/// "+7 999 123-45-67" for Russian/Kazakh numbers, "+" and the bare digits otherwise.
+String formatPhone(String digits) {
+  final d = digits.replaceAll(RegExp(r'\D'), '');
+  if (d.length == 11 && d.startsWith('7')) {
+    return '+7 ${d.substring(1, 4)} ${d.substring(4, 7)}-${d.substring(7, 9)}-${d.substring(9)}';
+  }
+  return '+$d';
+}

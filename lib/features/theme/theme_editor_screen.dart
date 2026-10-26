@@ -1,8 +1,12 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../core/services.dart';
 import '../../core/settings.dart';
-import 'app_theme.dart';
+import '../../ui/glass.dart';
+import '../../ui/ios_list.dart';
+import '../../ui/ios_page.dart';
+import '../../ui/look.dart';
+import '../chat/message_bubble.dart';
 
 class ThemeEditorScreen extends StatelessWidget {
   const ThemeEditorScreen({super.key});
@@ -10,209 +14,316 @@ class ThemeEditorScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final settings = AppScope.of(context).settings;
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Оформление'),
-        actions: [
-          TextButton(
-            onPressed: () => settings.update((s) => s.theme.load(ThemeSettings().toJson())),
-            child: const Text('Сбросить'),
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: settings,
-        builder: (context, _) {
-          final t = settings.theme;
-          void set(void Function(ThemeSettings t) change) => settings.update((s) => change(s.theme));
-          return ListView(
-            children: [
-              const _Preview(),
-              const ListTile(title: Text('Тема')),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: SegmentedButton<ThemeModeSetting>(
-                  segments: const [
-                    ButtonSegment(value: ThemeModeSetting.system, label: Text('Авто')),
-                    ButtonSegment(value: ThemeModeSetting.light, label: Text('Светлая')),
-                    ButtonSegment(value: ThemeModeSetting.dark, label: Text('Тёмная')),
-                  ],
-                  selected: {t.mode},
-                  onSelectionChanged: (v) => set((t) => t.mode = v.first),
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) {
+        final t = settings.theme;
+        final look = Look.of(context);
+        void set(void Function(ThemeSettings t) change) => settings.update((s) => change(s.theme));
+        return IosPage(
+          title: 'Оформление',
+          actions: [
+            GlassButton(
+              icon: CupertinoIcons.arrow_counterclockwise,
+              semanticLabel: 'Сбросить',
+              onPressed: () => set((t) => t.load(ThemeSettings().toJson())),
+            ),
+          ],
+          slivers: [
+            const SliverToBoxAdapter(child: _Preview()),
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 18),
+                child: CupertinoSlidingSegmentedControl<ThemeModeSetting>(
+                  groupValue: t.mode,
+                  onValueChanged: (v) => set((t) => t.mode = v!),
+                  children: const {
+                    ThemeModeSetting.system: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Авто')),
+                    ThemeModeSetting.light: Text('Светлая'),
+                    ThemeModeSetting.dark: Text('Тёмная'),
+                  },
                 ),
               ),
-              SwitchListTile(
-                title: const Text('AMOLED — чисто чёрный фон'),
-                value: t.amoled,
-                onChanged: (v) => set((t) => t.amoled = v),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Liquid Glass',
+                dividerInset: 16,
+                footer: 'Как в iOS 27: от прозрачного стекла к матовому, более читаемому.',
+                children: [
+                  _SliderRow(
+                    left: 'Прозрачное',
+                    right: 'Матовое',
+                    value: t.glassTint,
+                    onChanged: (v) => set((t) => t.glassTint = v),
+                  ),
+                ],
               ),
-              const ListTile(title: Text('Акцентный цвет')),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (final e in themePresets.entries)
-                      _ColorDot(
-                        color: Color(e.value),
-                        label: e.key,
-                        selected: t.seedColor == e.value,
-                        onTap: () => set((t) => t.seedColor = e.value),
-                      ),
-                  ],
-                ),
-              ),
-              const ListTile(title: Text('Цвет моих сообщений')),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _ColorDot(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      label: 'Как тема',
-                      selected: t.outgoingBubbleColor == null,
-                      onTap: () => set((t) => t.outgoingBubbleColor = null),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Акцентный цвет',
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        for (final e in accentPresets.entries)
+                          _ColorDot(
+                            colors: [Color(e.value)],
+                            selected: t.seedColor == e.value,
+                            onTap: () => set((t) => t.seedColor = e.value),
+                          ),
+                      ],
                     ),
-                    for (final c in _bubbleColors)
-                      _ColorDot(
-                        color: Color(c),
-                        selected: t.outgoingBubbleColor == c,
-                        onTap: () => set((t) => t.outgoingBubbleColor = c),
-                      ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-              _SliderTile(
-                title: 'Скругление пузырей',
-                value: t.bubbleRadius,
-                min: 0,
-                max: 28,
-                label: '${t.bubbleRadius.round()}',
-                onChanged: (v) => set((t) => t.bubbleRadius = v),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Обои чата',
+                children: [
+                  SizedBox(
+                    height: 132,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.all(14),
+                      children: [
+                        for (final (i, w) in wallpapers.indexed)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 12),
+                            child: GestureDetector(
+                              onTap: () => set((t) => t.wallpaper = i),
+                              child: Column(
+                                children: [
+                                  Container(
+                                    width: 60,
+                                    height: 80,
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: t.wallpaper == i ? look.accent : look.separator,
+                                        width: t.wallpaper == i ? 2.5 : 0.5,
+                                      ),
+                                    ),
+                                    child: ClipRRect(
+                                      borderRadius: BorderRadius.circular(10),
+                                      child: WallpaperBackground(colors: w.colors(look.dark, false)),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(w.name, style: TextStyle(fontSize: 11, color: look.secondaryLabel)),
+                                ],
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              _SliderTile(
-                title: 'Размер текста',
-                value: t.fontScale,
-                min: 0.8,
-                max: 1.4,
-                label: '${(t.fontScale * 100).round()}%',
-                onChanged: (v) => set((t) => t.fontScale = v),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Сообщения',
+                dividerInset: 16,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: [
+                        _ColorDot(
+                          colors: [look.accent],
+                          label: 'Как акцент',
+                          selected: t.outgoingBubbleColor == null,
+                          onTap: () => set((t) => t.outgoingBubbleColor = null),
+                        ),
+                        for (final c in _bubbleColors)
+                          _ColorDot(
+                            colors: [Color(c)],
+                            selected: t.outgoingBubbleColor == c,
+                            onTap: () => set((t) => t.outgoingBubbleColor = c),
+                          ),
+                      ],
+                    ),
+                  ),
+                  _SliderRow(
+                    left: 'Скругление',
+                    right: '${t.bubbleRadius.round()}',
+                    value: (t.bubbleRadius - 4) / 20,
+                    onChanged: (v) => set((t) => t.bubbleRadius = 4 + v * 20),
+                  ),
+                  _SliderRow(
+                    left: 'Размер текста',
+                    right: '${(t.fontScale * 100).round()}%',
+                    value: (t.fontScale - 0.8) / 0.6,
+                    onChanged: (v) => set((t) => t.fontScale = 0.8 + v * 0.6),
+                  ),
+                ],
               ),
-              SwitchListTile(
-                title: const Text('Компактный режим'),
-                subtitle: const Text('Плотнее список чатов и сообщения'),
-                value: t.compact,
-                onChanged: (v) => set((t) => t.compact = v),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                dividerInset: 16,
+                children: [
+                  IosSwitchRow(
+                    title: 'Компактный режим',
+                    value: t.compact,
+                    onChanged: (v) => set((t) => t.compact = v),
+                  ),
+                  IosSwitchRow(
+                    title: 'Чёрный AMOLED',
+                    subtitle: 'В тёмной теме',
+                    value: t.amoled,
+                    onChanged: (v) => set((t) => t.amoled = v),
+                  ),
+                  IosSwitchRow(
+                    title: 'Время с секундами',
+                    value: t.showSeconds,
+                    onChanged: (v) => set((t) => t.showSeconds = v),
+                  ),
+                ],
               ),
-              SwitchListTile(
-                title: const Text('Время с секундами'),
-                value: t.showSeconds,
-                onChanged: (v) => set((t) => t.showSeconds = v),
-              ),
-              const SizedBox(height: 24),
-            ],
-          );
-        },
-      ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
 
-const _bubbleColors = [
-  0xFFEEFFDE, // classic Telegram green
-  0xFFDCF3FF,
-  0xFFFFE4F1,
-  0xFFFFF4CC,
-  0xFF2B5278,
-  0xFF3E2A5C,
-  0xFF1F4D3A,
-  0xFF5A2B2B,
-];
+/// Classic Telegram green, iMessage blue, and a few more.
+const _bubbleColors = [0xFF4FAE4E, 0xFF34AADC, 0xFF5E5CE6, 0xFFBF5AF2, 0xFFFF6482, 0xFFFF9F0A, 0xFF636366];
 
 class _Preview extends StatelessWidget {
   const _Preview();
 
   @override
   Widget build(BuildContext context) {
-    final style = ChatStyle.of(context);
-    Widget bubble(String text, bool out) => Align(
+    final look = Look.of(context);
+    Widget bubble(String text, bool out, {bool last = true}) => Align(
       alignment: out ? Alignment.centerRight : Alignment.centerLeft,
-      child: Container(
-        margin: EdgeInsets.symmetric(vertical: style.compact ? 2 : 4),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: out ? style.outgoingBubble : style.incomingBubble,
-          borderRadius: BorderRadius.circular(style.bubbleRadius),
+      child: Padding(
+        padding: EdgeInsets.only(left: out ? 40 : 6, right: out ? 6 : 40, top: 3),
+        child: CustomPaint(
+          painter: BubblePainter(
+            colors: out ? look.outgoing : [look.incoming],
+            outgoing: out,
+            first: true,
+            last: last,
+            radius: look.bubbleRadius,
+            shadow: !look.dark,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Text(text, style: TextStyle(fontSize: 16, color: out ? look.onOutgoing : look.onIncoming)),
+          ),
         ),
-        child: Text(text, style: TextStyle(color: out ? style.onOutgoingBubble : style.onIncomingBubble, fontSize: 15)),
       ),
     );
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [bubble('Привет! Как тебе новая тема?', false), bubble('Огонь 🔥 Пузыри как раз как я хотел', true)],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(26),
+        child: SizedBox(
+          height: 190,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              const WallpaperBackground(),
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Center(
+                      child: GlassPill(
+                        child: Text('Сегодня', style: TextStyle(fontSize: 13, color: look.label)),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    bubble('Привет! Как тебе новая тема?', false),
+                    bubble('Огонь 🔥', true, last: false),
+                    bubble('Стекло как в iOS 27', true),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _ColorDot extends StatelessWidget {
-  const _ColorDot({required this.color, required this.selected, required this.onTap, this.label});
+  const _ColorDot({required this.colors, required this.selected, required this.onTap, this.label});
 
-  final Color color;
+  final List<Color> colors;
   final bool selected;
   final VoidCallback onTap;
   final String? label;
 
   @override
   Widget build(BuildContext context) {
-    final dot = InkWell(
-      onTap: onTap,
-      customBorder: const CircleBorder(),
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(
-          color: color,
-          shape: BoxShape.circle,
-          border: Border.all(color: selected ? Theme.of(context).colorScheme.onSurface : Colors.transparent, width: 3),
+    final look = Look.of(context);
+    return Semantics(
+      label: label,
+      selected: selected,
+      button: true,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          width: 38,
+          height: 38,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: selected ? colors.first : const Color(0x00000000), width: 2.5),
+          ),
+          child: DecoratedBox(
+            decoration: BoxDecoration(shape: BoxShape.circle, color: colors.first),
+            child: selected ? Icon(CupertinoIcons.checkmark_alt, size: 18, color: look.bg) : null,
+          ),
         ),
       ),
     );
-    return label == null ? dot : Tooltip(message: label!, child: dot);
   }
 }
 
-class _SliderTile extends StatelessWidget {
-  const _SliderTile({
-    required this.title,
-    required this.value,
-    required this.min,
-    required this.max,
-    required this.label,
-    required this.onChanged,
-  });
+class _SliderRow extends StatelessWidget {
+  const _SliderRow({required this.left, required this.right, required this.value, required this.onChanged});
 
-  final String title;
+  final String left;
+  final String right;
   final double value;
-  final double min;
-  final double max;
-  final String label;
   final ValueChanged<double> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return ListTile(
-      title: Text('$title: $label'),
-      subtitle: Slider(value: value.clamp(min, max), min: min, max: max, onChanged: onChanged),
+    final look = Look.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Text(left, style: TextStyle(fontSize: 15, color: look.label)),
+              const Spacer(),
+              Text(right, style: TextStyle(fontSize: 15, color: look.secondaryLabel)),
+            ],
+          ),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoSlider(value: value.clamp(0, 1), onChanged: onChanged),
+          ),
+        ],
+      ),
     );
   }
 }

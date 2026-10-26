@@ -10,7 +10,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../app.dart';
 import '../core/services.dart';
@@ -59,7 +59,7 @@ Future<void> main() async {
   if (screen != null) {
     // Wait for the demo account to "log in" before opening the screen.
     await Future<void>.delayed(const Duration(milliseconds: 1500));
-    navigator.currentState?.push(MaterialPageRoute<void>(builder: (_) => screen));
+    navigator.currentState?.push(CupertinoPageRoute<void>(builder: (_) => screen));
   }
 }
 
@@ -129,7 +129,7 @@ class IosPreviewFrame extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
     const insets = EdgeInsets.only(top: 54, bottom: 34);
-    final fg = dark ? Colors.white : Colors.black;
+    final fg = dark ? const Color(0xFFFFFFFF) : const Color(0xFF000000);
     return MediaQuery(
       data: media.copyWith(padding: insets, viewPadding: insets),
       child: Directionality(
@@ -157,11 +157,11 @@ class IosPreviewFrame extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      Icon(Icons.signal_cellular_alt, size: 17, color: fg),
+                      _SignalBars(color: fg),
                       const SizedBox(width: 5),
-                      Icon(Icons.wifi, size: 17, color: fg),
+                      Icon(CupertinoIcons.wifi, size: 17, color: fg),
                       const SizedBox(width: 5),
-                      Icon(Icons.battery_full, size: 19, color: fg),
+                      Icon(CupertinoIcons.battery_full, size: 24, color: fg),
                     ],
                   ),
                 ),
@@ -186,4 +186,24 @@ class IosPreviewFrame extends StatelessWidget {
       ),
     );
   }
+}
+
+class _SignalBars extends StatelessWidget {
+  const _SignalBars({required this.color});
+
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    crossAxisAlignment: CrossAxisAlignment.end,
+    children: [
+      for (final h in [4.0, 6.5, 9.0, 11.5])
+        Container(
+          width: 3,
+          height: h,
+          margin: const EdgeInsets.only(right: 1.5),
+          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(1)),
+        ),
+    ],
+  );
 }

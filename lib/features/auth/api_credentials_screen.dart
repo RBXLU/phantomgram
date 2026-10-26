@@ -1,6 +1,10 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../core/settings.dart';
+import '../../ui/ios_list.dart';
+import '../../ui/ios_page.dart';
+import '../../ui/look.dart';
+import 'splash_screen.dart';
 
 /// Every Telegram client needs its own api_id/api_hash from my.telegram.org.
 class ApiCredentialsScreen extends StatefulWidget {
@@ -43,47 +47,57 @@ class _ApiCredentialsScreenState extends State<ApiCredentialsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.all(24),
-            children: [
-              Icon(Icons.blur_on, size: 72, color: Theme.of(context).colorScheme.primary),
-              const SizedBox(height: 12),
-              Text('Phantomgram', textAlign: TextAlign.center, style: Theme.of(context).textTheme.headlineMedium),
-              const SizedBox(height: 16),
-              const SelectableText(
-                'Для подключения к Telegram нужны ключи приложения.\n'
-                '1. Откройте my.telegram.org и войдите.\n'
-                '2. API development tools → создайте приложение.\n'
-                '3. Скопируйте сюда App api_id и App api_hash.\n\n'
-                'Ключи хранятся только на этом устройстве.',
+    final look = Look.of(context);
+    return IosPage(
+      title: 'Phantomgram',
+      showBack: false,
+      slivers: [
+        SliverToBoxAdapter(
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 460),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  const AppIcon(),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Добро пожаловать',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700, color: look.label),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(32, 8, 32, 12),
+                    child: Text(
+                      'Для подключения к Telegram нужны ключи приложения. Они хранятся только на этом устройстве.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 15, color: look.secondaryLabel),
+                    ),
+                  ),
+                  IosSection(
+                    dividerInset: 16,
+                    footer:
+                        'my.telegram.org → API development tools → создайте приложение и скопируйте '
+                        'App api_id и App api_hash.',
+                    children: [
+                      SectionTextField(controller: _id, placeholder: 'api_id', keyboardType: TextInputType.number),
+                      SectionTextField(controller: _hash, placeholder: 'api_hash', onSubmitted: (_) => _save()),
+                    ],
+                  ),
+                  if (_error != null)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(_error!, style: const TextStyle(color: LookData.destructive, fontSize: 15)),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: IosPrimaryButton(label: 'Продолжить', onPressed: _save),
+                  ),
+                ],
               ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _id,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'api_id', border: OutlineInputBorder()),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _hash,
-                decoration: const InputDecoration(labelText: 'api_hash', border: OutlineInputBorder()),
-                onSubmitted: (_) => _save(),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 8),
-                Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
-              ],
-              const SizedBox(height: 16),
-              FilledButton(onPressed: _save, child: const Text('Продолжить')),
-            ],
+            ),
           ),
         ),
-      ),
+      ],
     );
   }
 }

@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:phantomgram/core/settings.dart';
 import 'package:phantomgram/core/td_text.dart';
-import 'package:phantomgram/widgets/chat_avatar.dart';
+import 'package:phantomgram/ui/glass.dart';
 
 void main() {
   test('content previews', () {
@@ -67,6 +67,8 @@ void main() {
     expect(initials('Phantomgram — разработка'), 'PР');
     expect(initials('🚀'), '🚀');
     expect(initials('  '), '?');
+    expect(formatPhone('79991234567'), '+7 999 123-45-67');
+    expect(formatPhone('380501234567'), '+380501234567');
   });
 
   test('settings survive a JSON round-trip', () {

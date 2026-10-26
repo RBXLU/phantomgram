@@ -1,7 +1,11 @@
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 
 import '../../core/services.dart';
 import '../../core/td_text.dart';
+import '../../ui/feedback.dart';
+import '../../ui/ios_list.dart';
+import '../../ui/ios_page.dart';
+import '../../ui/look.dart';
 import 'spam_rules.dart';
 
 class AntiSpamScreen extends StatelessWidget {
@@ -11,144 +15,129 @@ class AntiSpamScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final s = AppScope.of(context);
     final settings = s.settings;
-    return Scaffold(
-      appBar: AppBar(title: const Text('Антиспам')),
-      body: ListenableBuilder(
-        listenable: settings,
-        builder: (context, _) {
-          final r = settings.spam;
-          void set(void Function(SpamRules r) change) => settings.update((st) => change(st.spam));
-          return ListView(
-            children: [
-              SwitchListTile(
-                title: const Text('Спам сразу в архив'),
-                value: r.enabled,
-                onChanged: (v) => set((r) => r.enabled = v),
-              ),
-              SwitchListTile(
-                title: const Text('Архивировать новые чаты от незнакомцев'),
-                subtitle: const Text(
-                  'Настройка Telegram: работает даже когда клиент закрыт. '
-                  'Доступна не всем аккаунтам',
-                ),
-                value: r.serverAutoArchive,
-                onChanged: r.enabled ? (v) => set((r) => r.serverAutoArchive = v) : null,
-              ),
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 0),
-                child: Text('Локальные правила для личных сообщений от незнакомцев:'),
-              ),
-              CheckboxListTile(
-                title: const Text('Помечены Telegram как SCAM / FAKE'),
-                value: r.scamFake,
-                onChanged: r.enabled ? (v) => set((r) => r.scamFake = v!) : null,
-              ),
-              CheckboxListTile(
-                title: const Text('Содержат ссылку'),
-                value: r.strangerLinks,
-                onChanged: r.enabled ? (v) => set((r) => r.strangerLinks = v!) : null,
-              ),
-              CheckboxListTile(
-                title: const Text('Отправитель без аватарки'),
-                subtitle: const Text('Строгое правило, может задеть обычных людей'),
-                value: r.strangerNoPhoto,
-                onChanged: r.enabled ? (v) => set((r) => r.strangerNoPhoto = v!) : null,
-              ),
-              _WordsTile(
-                title: 'Стоп-слова',
-                subtitle: 'Сообщение от незнакомца с таким словом → чат в архив',
-                words: r.keywords,
-                onChanged: (w) => set((r) => r.keywords = w),
-              ),
-              _WordsTile(
-                title: 'Скрывать сообщения со словами',
-                subtitle: 'Во всех чатах и группах сообщение сворачивается',
-                words: r.hiddenWords,
-                onChanged: (w) => set((r) => r.hiddenWords = w),
-              ),
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'Чаты с контактами, ботами и теми, кому вы уже писали, не трогаются никогда.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-              const Divider(),
-              ListTile(
-                title: const Text('Журнал'),
-                trailing: settings.spamLog.isEmpty
-                    ? null
-                    : TextButton(
-                        onPressed: () => settings.update((st) => st.spamLog.clear()),
-                        child: const Text('Очистить'),
-                      ),
-              ),
-              if (settings.spamLog.isEmpty) const ListTile(title: Text('Пока ничего не отправлено в архив')),
-              for (final e in settings.spamLog)
-                ListTile(
-                  leading: const Icon(Icons.archive_outlined),
-                  title: Text(e.title),
-                  subtitle: Text(
-                    '${e.reasons.join(', ')}\n'
-                    '${formatDateTime(e.date.millisecondsSinceEpoch ~/ 1000)}',
-                  ),
-                  isThreeLine: true,
-                  trailing: IconButton(
-                    tooltip: 'Не спам — вернуть',
-                    icon: const Icon(Icons.unarchive_outlined),
-                    onPressed: () async {
-                      await s.antispam.moveToMain(e.chatId);
-                      settings.update((st) => st.spamLog.remove(e));
-                    },
-                  ),
-                ),
-            ],
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) {
+        final r = settings.spam;
+        final look = Look.of(context);
+        void set(void Function(SpamRules r) change) => settings.update((st) => change(st.spam));
+
+        Future<void> editWords(String title, List<String> words, void Function(List<String>) save) async {
+          final result = await promptText(
+            context,
+            title: title,
+            message: 'По одному слову или фразе на строку',
+            initial: words.join('\n'),
+            lines: 6,
+            action: 'Сохранить',
           );
-        },
-      ),
-    );
-  }
-}
+          if (result == null) return;
+          save(result.split('\n').map((w) => w.trim()).where((w) => w.isNotEmpty).toList());
+        }
 
-class _WordsTile extends StatelessWidget {
-  const _WordsTile({required this.title, required this.subtitle, required this.words, required this.onChanged});
-
-  final String title;
-  final String subtitle;
-  final List<String> words;
-  final ValueChanged<List<String>> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      title: Text(title),
-      subtitle: Text(
-        words.isEmpty ? subtitle : '$subtitle\n${words.join(', ')}',
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-      ),
-      isThreeLine: words.isNotEmpty,
-      trailing: const Icon(Icons.edit_outlined),
-      onTap: () async {
-        final controller = TextEditingController(text: words.join('\n'));
-        final result = await showDialog<String>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(title),
-            content: TextField(
-              controller: controller,
-              maxLines: 10,
-              decoration: const InputDecoration(hintText: 'По одному слову или фразе на строку'),
+        return IosPage(
+          title: 'Антиспам',
+          slivers: [
+            SliverToBoxAdapter(
+              child: IosSection(
+                dividerInset: 16,
+                footer: 'Серверная настройка работает, даже когда клиент закрыт. Доступна не всем аккаунтам.',
+                children: [
+                  IosSwitchRow(
+                    title: 'Спам сразу в архив',
+                    value: r.enabled,
+                    onChanged: (v) => set((r) => r.enabled = v),
+                  ),
+                  IosSwitchRow(
+                    title: 'Новые чаты от незнакомцев',
+                    subtitle: 'Архивировать и отключать уведомления (Telegram)',
+                    value: r.serverAutoArchive,
+                    onChanged: r.enabled ? (v) => set((r) => r.serverAutoArchive = v) : null,
+                  ),
+                ],
+              ),
             ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Отмена')),
-              FilledButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Сохранить')),
-            ],
-          ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Правила для незнакомцев',
+                dividerInset: 16,
+                footer: 'Чаты с контактами, ботами и теми, кому вы уже писали, не трогаются никогда.',
+                children: [
+                  IosSwitchRow(
+                    title: 'Помечены как SCAM / FAKE',
+                    value: r.scamFake,
+                    onChanged: r.enabled ? (v) => set((r) => r.scamFake = v) : null,
+                  ),
+                  IosSwitchRow(
+                    title: 'Присылают ссылку',
+                    value: r.strangerLinks,
+                    onChanged: r.enabled ? (v) => set((r) => r.strangerLinks = v) : null,
+                  ),
+                  IosSwitchRow(
+                    title: 'Без аватарки',
+                    subtitle: 'Строгое правило, может задеть обычных людей',
+                    value: r.strangerNoPhoto,
+                    onChanged: r.enabled ? (v) => set((r) => r.strangerNoPhoto = v) : null,
+                  ),
+                  IosRow(
+                    title: 'Стоп-слова',
+                    value: '${r.keywords.length}',
+                    onTap: () => editWords('Стоп-слова', r.keywords, (w) => set((r) => r.keywords = w)),
+                  ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Во всех чатах',
+                dividerInset: 16,
+                footer: 'Сообщения с этими словами сворачиваются; нажмите, чтобы показать.',
+                children: [
+                  IosRow(
+                    title: 'Скрывать сообщения со словами',
+                    value: r.hiddenWords.isEmpty ? 'Нет' : '${r.hiddenWords.length}',
+                    onTap: () => editWords('Скрывать со словами', r.hiddenWords, (w) => set((r) => r.hiddenWords = w)),
+                  ),
+                ],
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: IosSection(
+                header: 'Журнал',
+                dividerInset: 16,
+                children: [
+                  if (settings.spamLog.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text('Пока ничего не отправлено в архив', style: TextStyle(color: look.secondaryLabel)),
+                    ),
+                  for (final e in settings.spamLog)
+                    IosRow(
+                      title: e.title,
+                      subtitle: '${e.reasons.join(', ')}\n${formatDateTime(e.date.millisecondsSinceEpoch ~/ 1000)}',
+                      trailing: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        minimumSize: const Size(0, 32),
+                        onPressed: () async {
+                          await s.antispam.moveToMain(e.chatId);
+                          settings.update((st) => st.spamLog.remove(e));
+                          if (context.mounted) showToast(context, 'Чат «${e.title}» возвращён');
+                        },
+                        child: const Text('Не спам', style: TextStyle(fontSize: 15)),
+                      ),
+                    ),
+                  if (settings.spamLog.isNotEmpty)
+                    IosRow(
+                      title: 'Очистить журнал',
+                      destructive: true,
+                      centered: true,
+                      onTap: () => settings.update((st) => st.spamLog.clear()),
+                    ),
+                ],
+              ),
+            ),
+          ],
         );
-        controller.dispose();
-        if (result == null) return;
-        onChanged(result.split('\n').map((w) => w.trim()).where((w) => w.isNotEmpty).toList());
       },
     );
   }

@@ -1,20 +1,26 @@
 import 'dart:async';
 
-import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/services.dart';
 import '../../core/td_client.dart';
 import '../../core/td_text.dart';
-import '../antispam/spam_rules.dart';
+import '../../ui/feedback.dart';
+import '../../ui/glass.dart';
+import '../../ui/look.dart';
+import '../../widgets/chat_avatar.dart';
 import '../archive/message_archive.dart';
 import '../chats/chat_store.dart';
-import '../theme/app_theme.dart';
+import 'message_bubble.dart';
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key, required this.chatId});
+  const ChatScreen({super.key, required this.chatId, this.embedded = false});
 
   final int chatId;
+
+  /// Shown next to the chat list on wide screens: no back button.
+  final bool embedded;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -204,12 +210,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final last = chat?.lastMessage?['id'] as int?;
     if (last == null) return;
     await s.ghost.markRead(chatId, last);
-    _toast('Отмечено прочитанным');
+    if (mounted) showToast(context, 'Отмечено прочитанным', icon: CupertinoIcons.checkmark_alt);
   }
 
   void _toast(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    if (mounted) showToast(context, text);
   }
 
   @override
@@ -223,263 +228,329 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: s.chats, builder: (context, _) => _buildScaffold(context));
+  Widget build(BuildContext context) =>
+      ListenableBuilder(listenable: s.chats, builder: (context, _) => _buildPage(context));
+
+  /// Oldest first, with day separators and sender grouping resolved.
+  List<ChatEntry> _entries() {
+    final ids = _messages.keys.toList()..sort();
+    final entries = <ChatEntry>[];
+    for (var i = 0; i < ids.length; i++) {
+      final m = _messages[ids[i]]!;
+      final prev = i > 0 ? _messages[ids[i - 1]] : null;
+      final next = i + 1 < ids.length ? _messages[ids[i + 1]] : null;
+      final date = m['date'] as int;
+      if (prev == null || !sameDay(prev['date'] as int, date)) entries.add(ChatEntry.day(date));
+      entries.add(
+        ChatEntry.message(m, first: prev == null || !_sameGroup(prev, m), last: next == null || !_sameGroup(m, next)),
+      );
+    }
+    return entries;
   }
 
-  Widget _buildScaffold(BuildContext context) {
+  static bool _sameGroup(TdObject a, TdObject b) =>
+      a['is_outgoing'] == b['is_outgoing'] &&
+      _senderKey(a) == _senderKey(b) &&
+      sameDay(a['date'] as int, b['date'] as int) &&
+      ((b['date'] as int) - (a['date'] as int)).abs() < 600;
+
+  static String _senderKey(TdObject m) {
+    final sender = m['sender_id'] as Map?;
+    return '${sender?['user_id'] ?? sender?['chat_id']}';
+  }
+
+  String _subtitle(ChatInfo? info) {
+    if (info == null) return '';
+    return switch (info.kind) {
+      ChatKind.private || ChatKind.secret => userStatusText(s.chats.users[info.privateUserId]?['status'] as Map?),
+      ChatKind.group => 'группа',
+      ChatKind.channel => 'канал',
+    };
+  }
+
+  Future<void> _chatMenu() async {
+    final pinned = s.chats.isLocallyPinned(chatId);
+    final action = await actionSheet<String>(
+      context,
+      title: chat?.title,
+      actions: [
+        const SheetAction('Отметить прочитанным', 'read'),
+        SheetAction(pinned ? 'Открепить' : 'Закрепить (без лимита, на этом устройстве)', 'pin'),
+      ],
+    );
+    if (action == 'read') await _markReadNow();
+    if (action == 'pin') s.settings.toggleLocalPin(chatId);
+  }
+
+  Widget _buildPage(BuildContext context) {
+    final look = Look.of(context);
+    final media = MediaQuery.of(context);
     final info = chat;
-    final ids = _messages.keys.toList()..sort((a, b) => b.compareTo(a));
+    final entries = _entries().reversed.toList();
     final ghostRead = s.ghost.skipReadReceipts;
     final canWrite = info != null && info.kind != ChatKind.channel;
     final readOutbox = info?.raw['last_read_outbox_message_id'] as int? ?? 0;
+    final isGroup = info?.kind == ChatKind.group;
+    final top = media.padding.top;
+    final headerHeight = top + 64 + (ghostRead ? 46 : 0);
+    final bottom = media.padding.bottom + media.viewInsets.bottom;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(info?.title ?? ''),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'read') _markReadNow();
-              if (v == 'pin') {
-                s.settings.toggleLocalPin(chatId);
-                setState(() {});
-              }
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'read', child: Text('Отметить прочитанным')),
-              PopupMenuItem(
-                value: 'pin',
-                child: Text(s.chats.isLocallyPinned(chatId) ? 'Открепить (локально)' : 'Закрепить локально'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Column(
+    return ColoredBox(
+      color: look.bg,
+      child: Stack(
         children: [
-          if (ghostRead)
-            Material(
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              child: ListTile(
-                dense: true,
-                leading: const Icon(Icons.visibility_off),
-                title: const Text('Призрачный режим: собеседник не узнает, что вы прочитали'),
-                trailing: TextButton(onPressed: _markReadNow, child: const Text('Прочитать')),
-              ),
-            ),
-          Expanded(
+          const Positioned.fill(child: WallpaperBackground()),
+          Positioned.fill(
             child: ListView.builder(
               controller: _scroll,
               reverse: true,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-              itemCount: ids.length,
+              physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+              // Visual insets: header on top, composer at the bottom.
+              padding: EdgeInsets.fromLTRB(8, headerHeight + 8, 8, bottom + 66),
+              itemCount: entries.length,
               itemBuilder: (context, i) {
-                final m = _messages[ids[i]]!;
+                final e = entries[i];
+                if (e.message == null) {
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    child: Center(
+                      child: GlassPill(
+                        child: Text(
+                          formatDayHeader(e.date),
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: look.label),
+                        ),
+                      ),
+                    ),
+                  );
+                }
+                final m = e.message!;
+                final sender = m['sender_id'] as Map?;
+                final senderUser = senderUserId(sender);
                 return MessageBubble(
                   message: m,
-                  isGroup: info?.kind == ChatKind.group,
+                  firstInGroup: e.first,
+                  lastInGroup: e.last,
+                  showSender: isGroup,
+                  senderName: s.chats.senderName(sender),
+                  senderId: senderUser ?? senderChatId(sender) ?? 0,
+                  senderAvatar: !isGroup
+                      ? null
+                      : Avatar(
+                          id: senderUser ?? 0,
+                          title: s.chats.senderName(sender),
+                          size: 32,
+                          image: photoImage(
+                            s.chats,
+                            ((s.chats.users[senderUser]?['profile_photo'] as Map?)?['small'] as Map?)?['id'] as int?,
+                            null,
+                          ),
+                        ),
                   deleted: _deleted.contains(m['id']),
                   archived: _archived[m['id']],
                   read: m['is_outgoing'] == true && (m['id'] as int) <= readOutbox,
                   rules: s.settings.spam,
-                  senderName: s.chats.senderName(m['sender_id'] as Map?),
+                  onLongPress: () => _messageMenu(m),
                 );
               },
             ),
           ),
-          if (canWrite)
-            SafeArea(
-              top: false,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _composer,
-                        minLines: 1,
-                        maxLines: 6,
-                        textInputAction: TextInputAction.send,
-                        onChanged: _onTyping,
-                        onSubmitted: (_) => _send(),
-                        decoration: InputDecoration(
-                          hintText: 'Сообщение',
-                          filled: true,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    IconButton.filled(onPressed: _send, icon: const Icon(Icons.send)),
-                  ],
+          // Header: fade, glass back button, title capsule, avatar.
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: top + 70,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [look.wallpaper.first.withValues(alpha: 0.9), look.wallpaper.first.withValues(alpha: 0)],
+                  ),
                 ),
               ),
             ),
+          ),
+          Positioned(
+            top: top + 6,
+            left: 12,
+            right: 12,
+            height: 48,
+            child: Row(
+              children: [
+                if (!widget.embedded)
+                  GlassButton(
+                    icon: CupertinoIcons.chevron_back,
+                    semanticLabel: 'Назад',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                  )
+                else
+                  const SizedBox(width: 44),
+                Expanded(
+                  child: Center(
+                    child: GestureDetector(
+                      onTap: _chatMenu,
+                      child: Glass(
+                        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 5),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              info?.title ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: look.label),
+                            ),
+                            Text(
+                              _subtitle(info),
+                              maxLines: 1,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _subtitle(info) == 'в сети' ? look.accent : look.secondaryLabel,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: _chatMenu,
+                  child: info == null ? const SizedBox(width: 44) : ChatAvatar(chat: info, store: s.chats, size: 44),
+                ),
+              ],
+            ),
+          ),
+          if (ghostRead)
+            Positioned(
+              top: top + 62,
+              left: 16,
+              right: 16,
+              child: Center(
+                child: Glass(
+                  padding: const EdgeInsets.only(left: 14, right: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(CupertinoIcons.eye_slash_fill, size: 16, color: look.secondaryLabel),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          'Прочтение не отправляется',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 14, color: look.label),
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        minimumSize: const Size(0, 36),
+                        onPressed: _markReadNow,
+                        child: const Text('Прочитать', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Positioned(
+            left: 10,
+            right: 10,
+            bottom: bottom + 8,
+            child: canWrite ? _composerBar(look) : _readOnlyBar(look),
+          ),
         ],
       ),
     );
   }
-}
 
-class MessageBubble extends StatefulWidget {
-  const MessageBubble({
-    super.key,
-    required this.message,
-    required this.isGroup,
-    required this.deleted,
-    required this.archived,
-    required this.read,
-    required this.rules,
-    required this.senderName,
-  });
-
-  final TdObject message;
-  final bool isGroup;
-  final bool deleted;
-  final ArchivedMessage? archived;
-  final bool read;
-  final SpamRules rules;
-  final String senderName;
-
-  @override
-  State<MessageBubble> createState() => _MessageBubbleState();
-}
-
-class _MessageBubbleState extends State<MessageBubble> {
-  bool _revealed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final m = widget.message;
-    final style = ChatStyle.of(context);
-    final theme = Theme.of(context);
-    final outgoing = m['is_outgoing'] == true;
-    final text = contentText(m['content'] as Map);
-    final hiddenBy = _revealed ? null : hiddenWordIn(text, widget.rules);
-    final edited = (m['edit_date'] as int? ?? 0) > 0 || (widget.archived?.wasEdited ?? false);
-    final bg = outgoing ? style.outgoingBubble : style.incomingBubble;
-    final fg = outgoing ? style.onOutgoingBubble : style.onIncomingBubble;
-    final meta = TextStyle(fontSize: 11, color: fg.withValues(alpha: 0.65));
-    final pending = m['sending_state'] != null;
-
-    return Align(
-      alignment: outgoing ? Alignment.centerRight : Alignment.centerLeft,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.78),
-        child: Opacity(
-          opacity: widget.deleted ? 0.75 : 1,
-          child: GestureDetector(
-            onLongPress: () => _menu(context, text),
-            onTap: hiddenBy != null ? () => setState(() => _revealed = true) : null,
-            child: Container(
-              margin: EdgeInsets.symmetric(vertical: style.compact ? 1.5 : 3),
-              padding: EdgeInsets.fromLTRB(12, style.compact ? 5 : 8, 12, style.compact ? 4 : 6),
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(style.bubbleRadius),
-                border: widget.deleted ? Border.all(color: theme.colorScheme.error, width: 1.2) : null,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (widget.isGroup && !outgoing && widget.senderName.isNotEmpty)
-                    Text(
-                      widget.senderName,
-                      style: TextStyle(fontWeight: FontWeight.w600, color: theme.colorScheme.primary),
-                    ),
-                  if (hiddenBy != null)
-                    Text(
-                      'Скрыто: содержит «$hiddenBy». Нажмите, чтобы показать',
-                      style: TextStyle(color: fg, fontStyle: FontStyle.italic),
-                    )
-                  else
-                    Text(text, style: TextStyle(color: fg, fontSize: 15)),
-                  const SizedBox(height: 2),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (widget.deleted) ...[
-                        Icon(Icons.delete_outline, size: 13, color: theme.colorScheme.error),
-                        Text(' удалено  ', style: meta.copyWith(color: theme.colorScheme.error)),
-                      ],
-                      if (edited) Text('изм. ', style: meta),
-                      Text(formatTime(m['date'] as int, seconds: style.showSeconds), style: meta),
-                      if (outgoing && !widget.deleted)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 3),
-                          child: Icon(
-                            pending ? Icons.schedule : (widget.read ? Icons.done_all : Icons.done),
-                            size: 14,
-                            color: fg.withValues(alpha: 0.65),
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
+  Widget _composerBar(LookData look) => ValueListenableBuilder<TextEditingValue>(
+    valueListenable: _composer,
+    builder: (context, value, _) {
+      final hasText = value.text.trim().isNotEmpty;
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          Expanded(
+            child: Glass(
+              radius: 22,
+              child: CupertinoTextField(
+                controller: _composer,
+                placeholder: 'Сообщение',
+                minLines: 1,
+                maxLines: 6,
+                textInputAction: TextInputAction.send,
+                onChanged: _onTyping,
+                onSubmitted: (_) => _send(),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+                decoration: null,
+                style: TextStyle(fontSize: 17, color: look.label),
+                placeholderStyle: TextStyle(fontSize: 17, color: look.tertiaryLabel),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _menu(BuildContext context, String text) async {
-    final versions = widget.archived?.versions ?? const <MessageVersion>[];
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.copy),
-              title: const Text('Копировать'),
-              onTap: () => Navigator.pop(context, 'copy'),
-            ),
-            if (versions.length > 1)
-              ListTile(
-                leading: const Icon(Icons.history),
-                title: Text('История правок (${versions.length})'),
-                onTap: () => Navigator.pop(context, 'history'),
+          const SizedBox(width: 8),
+          AnimatedScale(
+            duration: const Duration(milliseconds: 160),
+            scale: hasText ? 1 : 0.85,
+            child: SizedBox.square(
+              dimension: 44,
+              child: CupertinoButton(
+                padding: EdgeInsets.zero,
+                borderRadius: BorderRadius.circular(22),
+                color: hasText ? look.accent : look.fill,
+                onPressed: hasText ? _send : null,
+                disabledColor: look.fill,
+                child: Icon(
+                  CupertinoIcons.arrow_up,
+                  size: 22,
+                  color: hasText ? const Color(0xFFFFFFFF) : look.tertiaryLabel,
+                ),
               ),
-          ],
-        ),
-      ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  Widget _readOnlyBar(LookData look) => Center(
+    child: GlassPill(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      child: Text('Канал · только чтение', style: TextStyle(fontSize: 15, color: look.secondaryLabel)),
+    ),
+  );
+
+  Future<void> _messageMenu(TdObject m) async {
+    final text = contentText(m['content'] as Map);
+    final versions = _archived[m['id']]?.versions ?? const <MessageVersion>[];
+    final action = await actionSheet<String>(
+      context,
+      actions: [
+        const SheetAction('Копировать', 'copy'),
+        if (versions.length > 1) SheetAction('История правок (${versions.length})', 'history'),
+      ],
     );
-    if (!context.mounted) return;
+    if (!mounted) return;
     switch (action) {
       case 'copy':
         await Clipboard.setData(ClipboardData(text: text));
+        if (mounted) showToast(context, 'Скопировано', icon: CupertinoIcons.doc_on_doc);
       case 'history':
-        await showDialog<void>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('История правок'),
-            content: SizedBox(
-              width: 400,
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final (i, v) in versions.indexed)
-                    ListTile(
-                      title: SelectableText(v.text),
-                      subtitle: Text(
-                        i == 0 ? 'Оригинал · ${formatTime(v.date)}' : 'Правка $i · ${formatDateTime(v.date)}',
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Закрыть'))],
-          ),
-        );
+        await showEditHistory(context, versions);
     }
   }
+}
+
+class ChatEntry {
+  ChatEntry.day(this.date) : message = null, first = false, last = false;
+
+  ChatEntry.message(TdObject this.message, {required this.first, required this.last}) : date = message['date'] as int;
+
+  final TdObject? message;
+  final int date;
+  final bool first;
+  final bool last;
 }
